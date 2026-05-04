@@ -1,0 +1,13 @@
+{
+  "name": "cygnisoft-ai-marketing-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI Marketing Agent web app for CygniSoft staffing and software services.",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
