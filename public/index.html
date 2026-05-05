@@ -28,6 +28,7 @@
         <button class="tab-button" type="button" data-tab="competitor">Competitor Review</button>
         <button class="tab-button" type="button" data-tab="market">Market & Hiring Trends</button>
         <button class="tab-button" type="button" data-tab="planner">Lead & Campaign Planner</button>
+        <button class="tab-button" type="button" data-tab="library">Content Library</button>
       </nav>
 
       <section id="generate" class="tab-panel workspace" aria-label="Marketing content generator">
@@ -89,6 +90,7 @@
 
           <div class="output-actions">
             <button id="copyButton" class="secondary-button" type="button" disabled>Copy Content</button>
+            <button id="saveContentButton" class="secondary-button" type="button" disabled>Save to Content Library</button>
           </div>
         </section>
       </section>
@@ -131,6 +133,7 @@
             <button id="copyKnowledgeButton" class="secondary-button" type="button">Copy Profile</button>
             <button id="editKnowledgeButton" class="secondary-button" type="button">Edit Profile</button>
             <button id="saveKnowledgeButton" class="secondary-button" type="button" disabled>Save Knowledge</button>
+            <button id="updateKnowledgeButton" class="secondary-button" type="button" disabled>Update Knowledge</button>
             <button id="clearKnowledgeButton" class="danger-button" type="button">Clear Knowledge</button>
           </div>
         </section>
@@ -332,6 +335,47 @@
           <div class="output-actions">
             <button id="copyPlannerButton" class="secondary-button" type="button">Copy Campaign Plan</button>
           </div>
+        </section>
+      </section>
+
+      <section id="library" class="tab-panel tool-layout" aria-label="Content library">
+        <form id="libraryFilterForm" class="generator-panel">
+          <div class="panel-heading">
+            <p class="eyebrow">Database</p>
+            <h2>Content Library</h2>
+          </div>
+
+          <div class="field-row">
+            <label for="libraryContentType">
+              <span>Filter by Content Type</span>
+              <select id="libraryContentType"></select>
+            </label>
+
+            <label for="libraryBusinessCategory">
+              <span>Filter by Business Category</span>
+              <select id="libraryBusinessCategory"></select>
+            </label>
+          </div>
+
+          <div class="actions">
+            <button id="loadLibraryButton" class="primary-button" type="submit">
+              <span class="spinner" hidden></span>
+              <span class="button-text">Load Saved Content</span>
+            </button>
+            <button id="resetLibraryButton" class="secondary-button" type="button">Reset Filters</button>
+          </div>
+          <p id="libraryStatus" class="status" data-type="neutral" role="status"></p>
+        </form>
+
+        <section class="output-panel">
+          <div class="output-header">
+            <div>
+              <p class="eyebrow">Saved output</p>
+              <h2>Saved Marketing Content</h2>
+            </div>
+            <span id="libraryBadge" class="badge">Ready</span>
+          </div>
+          <div id="libraryList" class="library-list"></div>
         </section>
       </section>
     </main>

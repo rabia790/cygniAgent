@@ -6,6 +6,24 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 
 const PORT = Number(process.env.PORT || 3000);
 
+function getSupabaseConfig() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  return { url, key, isConfigured: Boolean(url && key) };
+}
+
+function getSupabaseClient() {
+  const { url, key, isConfigured } = getSupabaseConfig();
+  if (!isConfigured) return null;
+
+  const { createClient } = require("@supabase/supabase-js");
+  return createClient(url, key);
+}
+
+function getSupabaseMissingMessage() {
+  return "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to enable database storage.";
+}
+
 const companyDetails = {
   name: "CygniSoft",
   positioning: "CygniSoft helps businesses grow with the right people and the right software.",
@@ -737,10 +755,84 @@ async function handleBuildKnowledge(req, res) {
     }
 
     profile.output = formatCompanyKnowledgeProfile(profile);
-    sendJson(res, 200, { profile, output: profile.output, pages });
+    const saveResult = await saveCompanyKnowledge({
+      companyName: "CygniSoft",
+      websiteUrls: successfulPages.map((page) => page.url),
+      profile,
+    });
+    sendJson(res, 200, {
+      profile,
+      output: profile.output,
+      pages,
+      saved: Boolean(saveResult.data && !saveResult.error),
+      saveError: saveResult.error,
+      supabaseConfigured: saveResult.configured,
+    });
   } catch (error) {
     console.error(error);
     sendJson(res, 500, { error: error.message || "Unable to build the company knowledge profile." });
+  }
+}
+
+async function handleGetCompanyProfile(_req, res) {
+  try {
+    const result = await getLatestCompanyKnowledge();
+    const profile = normalizeStoredProfile(result.data?.profile);
+    sendJson(res, 200, {
+      profile,
+      output: profile?.output || "No company knowledge profile has been built yet.",
+      supabaseConfigured: result.configured,
+      error: result.error,
+    });
+  } catch (error) {
+    console.error(error);
+    sendJson(res, 500, { error: error.message || "Unable to load company knowledge." });
+  }
+}
+
+async function handleUpdateCompanyProfile(req, res) {
+  try {
+    const { output, id } = JSON.parse((await readBody(req)) || "{}");
+    const profileText = String(output || "").trim();
+    if (!profileText || profileText === "No company knowledge profile has been built yet.") {
+      sendJson(res, 400, { error: "Please enter company profile content before saving." });
+      return;
+    }
+
+    const profile = {
+      ...parseManualProfile(profileText),
+      source: "manual",
+      output: profileText,
+      updatedAt: new Date().toISOString(),
+    };
+    const latest = id ? { data: { id } } : await getLatestCompanyKnowledge();
+    const result = latest.data?.id
+      ? await updateCompanyKnowledge({ id: latest.data.id, profile })
+      : await saveCompanyKnowledge({ profile });
+
+    if (result.error) {
+      sendJson(res, result.configured ? 500 : 503, { error: result.error, supabaseConfigured: result.configured });
+      return;
+    }
+
+    sendJson(res, 200, { profile, output: profile.output, saved: true, supabaseConfigured: result.configured });
+  } catch (error) {
+    console.error(error);
+    sendJson(res, 500, { error: error.message || "Unable to save company knowledge." });
+  }
+}
+
+async function handleClearCompanyProfile(_req, res) {
+  try {
+    const result = await clearCompanyKnowledge();
+    if (result.error) {
+      sendJson(res, result.configured ? 500 : 503, { error: result.error, supabaseConfigured: result.configured });
+      return;
+    }
+    sendJson(res, 200, { profile: null, output: "No company knowledge profile has been built yet.", supabaseConfigured: true });
+  } catch (error) {
+    console.error(error);
+    sendJson(res, 500, { error: error.message || "Unable to clear company knowledge." });
   }
 }
 
@@ -748,7 +840,7 @@ async function handleWebsiteReview(req, res) {
   try {
     const payload = JSON.parse((await readBody(req)) || "{}");
     const { url } = payload;
-    const companyProfile = getCompanyProfileFromPayload(payload);
+    const { profile: companyProfile } = await resolveCompanyProfile(payload);
     const urlList = parseUrlList(url);
 
     if (!urlList.length) {
@@ -768,7 +860,19 @@ async function handleWebsiteReview(req, res) {
       format: websiteReviewFormat,
     });
     const output = aiReview || formatWebsiteReview(page, extractKnowledgeFromPages([page]));
-    sendJson(res, 200, { output, page });
+    const saveResult = await saveWebsiteReview({
+      website_url: page.url,
+      business_focus: companyProfile ? "Saved CygniSoft knowledge" : "Default CygniSoft context",
+      review_output: output,
+    });
+    sendJson(res, 200, {
+      output,
+      page,
+      usingProfile: Boolean(companyProfile),
+      saved: Boolean(saveResult.data && !saveResult.error),
+      saveError: saveResult.error,
+      supabaseConfigured: saveResult.configured,
+    });
   } catch (error) {
     console.error(error);
     sendJson(res, 500, { error: error.message || "Unable to review the website page." });
@@ -779,7 +883,7 @@ async function handleCompetitorReview(req, res) {
   try {
     const payload = JSON.parse((await readBody(req)) || "{}");
     const { cygnisoftUrls, competitorUrls } = payload;
-    const companyProfile = getCompanyProfileFromPayload(payload);
+    const { profile: companyProfile } = await resolveCompanyProfile(payload);
     const cygniUrls = parseUrlList(cygnisoftUrls);
     const compUrls = parseUrlList(competitorUrls);
 
@@ -824,7 +928,21 @@ async function handleCompetitorReview(req, res) {
       format: competitorReviewFormat,
     });
     const output = aiReview || formatCompetitorReview(goodCygniPages, goodCompetitorPages, companyProfile);
-    sendJson(res, 200, { output, cygnisoftPages: cygniPages, competitorPages, usingProfile: Boolean(companyProfile) });
+    const saveResult = await saveCompetitorReview({
+      company_url: cygniUrls[0] || "",
+      competitor_urls: compUrls,
+      business_focus: companyProfile ? "Saved CygniSoft knowledge" : "Fetched CygniSoft URLs",
+      review_output: output,
+    });
+    sendJson(res, 200, {
+      output,
+      cygnisoftPages: cygniPages,
+      competitorPages,
+      usingProfile: Boolean(companyProfile),
+      saved: Boolean(saveResult.data && !saveResult.error),
+      saveError: saveResult.error,
+      supabaseConfigured: saveResult.configured,
+    });
   } catch (error) {
     console.error(error);
     sendJson(res, 500, { error: error.message || "Unable to complete competitor review." });
@@ -835,7 +953,7 @@ async function handleMarketTrends(req, res) {
   try {
     const payload = JSON.parse((await readBody(req)) || "{}");
     const { industry, region, researchFocus, notes } = payload;
-    const companyProfile = getCompanyProfileFromPayload(payload);
+    const { profile: companyProfile } = await resolveCompanyProfile(payload);
 
     if (!marketIndustries.includes(industry)) {
       sendJson(res, 400, { error: "Please select a valid industry." });
@@ -866,7 +984,21 @@ async function handleMarketTrends(req, res) {
       format: marketResearchFormat,
     });
     const output = aiOutput || buildMarketTrendsFallback(cleanPayload, companyProfile);
-    sendJson(res, 200, { output, source: aiOutput ? "openai" : "local", usingProfile: Boolean(companyProfile) });
+    const saveResult = await saveMarketTrend({
+      industry,
+      region: cleanPayload.region,
+      research_focus: researchFocus,
+      notes: cleanPayload.notes,
+      output,
+    });
+    sendJson(res, 200, {
+      output,
+      source: aiOutput ? "openai" : "local",
+      usingProfile: Boolean(companyProfile),
+      saved: Boolean(saveResult.data && !saveResult.error),
+      saveError: saveResult.error,
+      supabaseConfigured: saveResult.configured,
+    });
   } catch (error) {
     console.error(error);
     sendJson(res, 500, { error: error.message || "Unable to generate market and hiring trend research." });
@@ -877,7 +1009,7 @@ async function handleLeadCampaignPlan(req, res) {
   try {
     const payload = JSON.parse((await readBody(req)) || "{}");
     const { service, targetAudience, region, campaignGoal, campaignDuration, notes } = payload;
-    const companyProfile = getCompanyProfileFromPayload(payload);
+    const { profile: companyProfile } = await resolveCompanyProfile(payload);
 
     if (!plannerServices.includes(service)) {
       sendJson(res, 400, { error: "Please select a valid service or product." });
@@ -920,10 +1052,115 @@ async function handleLeadCampaignPlan(req, res) {
       format: leadPlannerFormat,
     });
     const output = aiOutput || buildLeadPlannerFallback(cleanPayload, companyProfile);
-    sendJson(res, 200, { output, source: aiOutput ? "openai" : "local", usingProfile: Boolean(companyProfile) });
+    const saveResult = await saveCampaignPlan({
+      service_product: service,
+      target_audience: targetAudience,
+      region: cleanPayload.region,
+      campaign_goal: campaignGoal,
+      campaign_duration: campaignDuration,
+      notes: cleanPayload.notes,
+      output,
+    });
+    sendJson(res, 200, {
+      output,
+      source: aiOutput ? "openai" : "local",
+      usingProfile: Boolean(companyProfile),
+      saved: Boolean(saveResult.data && !saveResult.error),
+      saveError: saveResult.error,
+      supabaseConfigured: saveResult.configured,
+    });
   } catch (error) {
     console.error(error);
     sendJson(res, 500, { error: error.message || "Unable to generate lead and campaign plan." });
+  }
+}
+
+async function handleSaveMarketingContent(req, res) {
+  try {
+    const payload = JSON.parse((await readBody(req)) || "{}");
+    const { title, contentType, businessCategory, userRequest, generatedOutput, status } = payload;
+
+    if (!generatedOutput || !String(generatedOutput).trim()) {
+      sendJson(res, 400, { error: "There is no generated content to save." });
+      return;
+    }
+
+    const result = await saveMarketingContent({
+      title: String(title || `${contentType || "Marketing Content"} - ${businessCategory || "CygniSoft"}`).trim(),
+      content_type: contentType || "",
+      business_category: businessCategory || "",
+      user_request: userRequest || "",
+      generated_output: generatedOutput,
+      status: status || "draft",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    if (result.error) {
+      sendJson(res, result.configured ? 500 : 503, { error: result.error, supabaseConfigured: result.configured });
+      return;
+    }
+
+    sendJson(res, 200, { item: result.data, saved: true, supabaseConfigured: true });
+  } catch (error) {
+    console.error(error);
+    sendJson(res, 500, { error: error.message || "Unable to save marketing content." });
+  }
+}
+
+async function handleGetSavedMarketingContent(req, res) {
+  try {
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const result = await getSavedMarketingContent({
+      contentType: url.searchParams.get("contentType") || "",
+      businessCategory: url.searchParams.get("businessCategory") || "",
+    });
+
+    if (result.error) {
+      sendJson(res, result.configured ? 500 : 503, { error: result.error, items: [], supabaseConfigured: result.configured });
+      return;
+    }
+
+    sendJson(res, 200, { items: result.data, supabaseConfigured: true });
+  } catch (error) {
+    console.error(error);
+    sendJson(res, 500, { error: error.message || "Unable to load saved content.", items: [] });
+  }
+}
+
+async function handleUpdateMarketingContent(req, res, id) {
+  try {
+    const { status } = JSON.parse((await readBody(req)) || "{}");
+    if (!["draft", "approved", "used"].includes(status)) {
+      sendJson(res, 400, { error: "Please select a valid status." });
+      return;
+    }
+
+    const result = await updateMarketingContentStatus(id, status);
+    if (result.error) {
+      sendJson(res, result.configured ? 500 : 503, { error: result.error, supabaseConfigured: result.configured });
+      return;
+    }
+
+    sendJson(res, 200, { item: result.data, supabaseConfigured: true });
+  } catch (error) {
+    console.error(error);
+    sendJson(res, 500, { error: error.message || "Unable to update saved content." });
+  }
+}
+
+async function handleDeleteMarketingContent(_req, res, id) {
+  try {
+    const result = await deleteMarketingContent(id);
+    if (result.error) {
+      sendJson(res, result.configured ? 500 : 503, { error: result.error, supabaseConfigured: result.configured });
+      return;
+    }
+
+    sendJson(res, 200, { deleted: true, item: result.data, supabaseConfigured: true });
+  } catch (error) {
+    console.error(error);
+    sendJson(res, 500, { error: error.message || "Unable to delete saved content." });
   }
 }
 
@@ -1545,6 +1782,146 @@ function getCompanyProfileFromPayload(payload) {
   };
 }
 
+async function saveCompanyKnowledge({ companyName = "CygniSoft", websiteUrls = [], profile }) {
+  const supabase = getSupabaseClient();
+  if (!supabase) return { data: null, error: getSupabaseMissingMessage(), configured: false };
+
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("company_knowledge")
+    .insert({
+      company_name: companyName,
+      website_urls: websiteUrls,
+      profile,
+      created_at: now,
+      updated_at: now,
+    })
+    .select()
+    .single();
+
+  return { data, error: error?.message || null, configured: true };
+}
+
+async function getLatestCompanyKnowledge() {
+  const supabase = getSupabaseClient();
+  if (!supabase) return { data: null, error: getSupabaseMissingMessage(), configured: false };
+
+  const { data, error } = await supabase
+    .from("company_knowledge")
+    .select("*")
+    .eq("company_name", "CygniSoft")
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return { data, error: error?.message || null, configured: true };
+}
+
+async function updateCompanyKnowledge({ id, companyName = "CygniSoft", websiteUrls = [], profile }) {
+  const supabase = getSupabaseClient();
+  if (!supabase) return { data: null, error: getSupabaseMissingMessage(), configured: false };
+
+  const values = {
+    company_name: companyName,
+    website_urls: websiteUrls,
+    profile,
+    updated_at: new Date().toISOString(),
+  };
+  const query = supabase.from("company_knowledge").update(values);
+  const { data, error } = await (id ? query.eq("id", id) : query.eq("company_name", companyName)).select().single();
+
+  return { data, error: error?.message || null, configured: true };
+}
+
+async function clearCompanyKnowledge() {
+  const supabase = getSupabaseClient();
+  if (!supabase) return { data: null, error: getSupabaseMissingMessage(), configured: false };
+
+  const { data, error } = await supabase.from("company_knowledge").delete().eq("company_name", "CygniSoft").select();
+  return { data, error: error?.message || null, configured: true };
+}
+
+async function saveMarketingContent(payload) {
+  return insertSupabaseRow("saved_marketing_content", payload);
+}
+
+async function getSavedMarketingContent({ contentType, businessCategory } = {}) {
+  const supabase = getSupabaseClient();
+  if (!supabase) return { data: [], error: getSupabaseMissingMessage(), configured: false };
+
+  let query = supabase.from("saved_marketing_content").select("*").order("created_at", { ascending: false });
+  if (contentType) query = query.eq("content_type", contentType);
+  if (businessCategory) query = query.eq("business_category", businessCategory);
+  const { data, error } = await query;
+  return { data: data || [], error: error?.message || null, configured: true };
+}
+
+async function saveWebsiteReview(payload) {
+  return insertSupabaseRow("website_reviews", payload);
+}
+
+async function saveCompetitorReview(payload) {
+  return insertSupabaseRow("competitor_reviews", payload);
+}
+
+async function saveMarketTrend(payload) {
+  return insertSupabaseRow("market_trends", payload);
+}
+
+async function saveCampaignPlan(payload) {
+  return insertSupabaseRow("campaign_plans", payload);
+}
+
+async function insertSupabaseRow(table, payload) {
+  const supabase = getSupabaseClient();
+  if (!supabase) return { data: null, error: getSupabaseMissingMessage(), configured: false };
+
+  const { data, error } = await supabase.from(table).insert(payload).select().single();
+  return { data, error: error?.message || null, configured: true };
+}
+
+async function updateMarketingContentStatus(id, status) {
+  const supabase = getSupabaseClient();
+  if (!supabase) return { data: null, error: getSupabaseMissingMessage(), configured: false };
+
+  const { data, error } = await supabase
+    .from("saved_marketing_content")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select()
+    .single();
+  return { data, error: error?.message || null, configured: true };
+}
+
+async function deleteMarketingContent(id) {
+  const supabase = getSupabaseClient();
+  if (!supabase) return { data: null, error: getSupabaseMissingMessage(), configured: false };
+
+  const { data, error } = await supabase.from("saved_marketing_content").delete().eq("id", id).select().single();
+  return { data, error: error?.message || null, configured: true };
+}
+
+async function resolveCompanyProfile(payload) {
+  const payloadProfile = getCompanyProfileFromPayload(payload);
+  if (payloadProfile) return { profile: payloadProfile, source: "request", dbError: null };
+
+  const latest = await getLatestCompanyKnowledge();
+  if (latest.data?.profile) {
+    return { profile: normalizeStoredProfile(latest.data.profile), source: "supabase", dbError: null };
+  }
+
+  return { profile: null, source: "none", dbError: latest.configured ? latest.error : latest.error };
+}
+
+function normalizeStoredProfile(profile) {
+  if (!profile) return null;
+  if (typeof profile === "string") return getCompanyProfileFromPayload({ companyKnowledge: profile });
+  return {
+    ...profile,
+    output: profile.output || formatCompanyKnowledgeProfile(profile),
+  };
+}
+
 function extractSections(output) {
   const knownHeadings = [
     "Company Overview",
@@ -1926,7 +2303,7 @@ async function handleGenerate(req, res) {
     const body = await readBody(req);
     const payload = JSON.parse(body || "{}");
     const { contentType, category, userRequest } = payload;
-    const companyProfile = getCompanyProfileFromPayload(payload);
+    const { profile: companyProfile } = await resolveCompanyProfile(payload);
 
     if (!contentTypes.includes(contentType)) {
       sendJson(res, 400, { error: "Please select a valid content type." });
@@ -1962,8 +2339,45 @@ async function handleGenerate(req, res) {
 }
 
 const server = http.createServer((req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+
   if (req.method === "POST" && req.url === "/api/generate") {
     handleGenerate(req, res);
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/company-knowledge") {
+    handleGetCompanyProfile(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/company-knowledge") {
+    handleUpdateCompanyProfile(req, res);
+    return;
+  }
+
+  if (req.method === "DELETE" && url.pathname === "/api/company-knowledge") {
+    handleClearCompanyProfile(req, res);
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/saved-marketing-content") {
+    handleGetSavedMarketingContent(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/saved-marketing-content") {
+    handleSaveMarketingContent(req, res);
+    return;
+  }
+
+  if (req.method === "PATCH" && url.pathname.startsWith("/api/saved-marketing-content/")) {
+    handleUpdateMarketingContent(req, res, decodeURIComponent(url.pathname.split("/").pop()));
+    return;
+  }
+
+  if (req.method === "DELETE" && url.pathname.startsWith("/api/saved-marketing-content/")) {
+    handleDeleteMarketingContent(req, res, decodeURIComponent(url.pathname.split("/").pop()));
     return;
   }
 

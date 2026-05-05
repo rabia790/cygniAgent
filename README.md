@@ -15,7 +15,8 @@ A clean web app that generates ready-to-use marketing content for CygniSoft staf
 - Website Knowledge Builder for public CygniSoft URLs
 - Website Review mode for page clarity, CTA, SEO, and content suggestions
 - Competitor Review mode for positioning, service, CTA, trust signal, and gap comparison
-- Persistent CygniSoft company knowledge saved in browser `localStorage` with the key `cygnisoft_company_knowledge`
+- Persistent CygniSoft company knowledge saved in Supabase, with browser `localStorage` fallback
+- Content Library backed by Supabase
 - Manual profile editing, saving, and clearing controls
 - Generate Content badge showing when saved CygniSoft knowledge is active
 - Version 4 Market & Hiring Trends mode
@@ -24,7 +25,7 @@ A clean web app that generates ready-to-use marketing content for CygniSoft staf
 ## Version 2 Tabs
 
 - Generate Content: keeps the original marketing generator.
-- Build Company Knowledge: fetches user-provided CygniSoft URLs and saves a structured profile in browser `localStorage`.
+- Build Company Knowledge: fetches user-provided CygniSoft URLs and saves a structured profile in Supabase.
 - Website Review: reviews one CygniSoft page URL.
 - Competitor Review: compares CygniSoft pages or the saved profile against competitor URLs.
 - Market & Hiring Trends: creates practical market research for selected industries, regions, and research focus areas.
@@ -32,7 +33,7 @@ A clean web app that generates ready-to-use marketing content for CygniSoft staf
 
 The browser automatically sends the latest saved company knowledge profile with Generate Content, Website Review, Competitor Review, Market & Hiring Trends, and Lead & Campaign Planner requests. The saved profile can be edited manually in the Build Company Knowledge tab, and it can also be cleared when you want to reset the app back to the default CygniSoft context.
 
-This localStorage approach is intended for internal Version 2 use and works on Vercel without a writable server folder. TODO: for multi-user production, move company knowledge storage to a database such as Supabase, Neon, Firebase, or Vercel KV.
+Supabase is the primary persistent storage. Browser localStorage remains a fallback for internal use when Supabase is not configured or a database save fails. TODO: for larger multi-user production, add authentication and user-scoped database rows.
 
 ## Testing Version 4
 
@@ -58,7 +59,7 @@ The planner does not scrape personal data or create private contact lists. It pr
 ## Setup
 
 1. Install Node.js 18 or newer.
-2. Optional: copy `.env.example` to `.env` and add your OpenAI API key.
+2. Copy `.env.example` to `.env.local` and add your OpenAI and Supabase settings.
 3. Start the app:
 
 ```bash
@@ -79,9 +80,100 @@ The app does not hardcode secrets. Use environment variables when enabling AI ge
 OPENAI_API_KEY=your_api_key_here
 OPENAI_MODEL=gpt-4o-mini
 PORT=3000
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
 If `OPENAI_API_KEY` is not set, the app uses its built-in CygniSoft marketing generator.
+
+If Supabase variables are missing, generation still works, but database save/load features show a clear configuration message.
+
+## Supabase Setup
+
+1. Create a Supabase project.
+2. Copy your project URL and anon key.
+3. Add these locally in `.env.local` and in Vercel Project Settings > Environment Variables:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+```
+
+4. Run this SQL in the Supabase SQL editor:
+
+```sql
+create extension if not exists "pgcrypto";
+
+create table if not exists company_knowledge (
+  id uuid primary key default gen_random_uuid(),
+  company_name text,
+  website_urls text[],
+  profile jsonb,
+  created_at timestamp with time zone default now(),
+  updated_at timestamp with time zone default now()
+);
+
+create table if not exists saved_marketing_content (
+  id uuid primary key default gen_random_uuid(),
+  title text,
+  content_type text,
+  business_category text,
+  user_request text,
+  generated_output text,
+  status text default 'draft',
+  created_at timestamp with time zone default now(),
+  updated_at timestamp with time zone default now()
+);
+
+create table if not exists website_reviews (
+  id uuid primary key default gen_random_uuid(),
+  website_url text,
+  business_focus text,
+  review_output text,
+  created_at timestamp with time zone default now()
+);
+
+create table if not exists competitor_reviews (
+  id uuid primary key default gen_random_uuid(),
+  company_url text,
+  competitor_urls text[],
+  business_focus text,
+  review_output text,
+  created_at timestamp with time zone default now()
+);
+
+create table if not exists market_trends (
+  id uuid primary key default gen_random_uuid(),
+  industry text,
+  region text,
+  research_focus text,
+  notes text,
+  output text,
+  created_at timestamp with time zone default now()
+);
+
+create table if not exists campaign_plans (
+  id uuid primary key default gen_random_uuid(),
+  service_product text,
+  target_audience text,
+  region text,
+  campaign_goal text,
+  campaign_duration text,
+  notes text,
+  output text,
+  created_at timestamp with time zone default now()
+);
+
+-- Enable RLS
+alter table company_knowledge enable row level security;
+alter table saved_marketing_content enable row level security;
+alter table website_reviews enable row level security;
+alter table competitor_reviews enable row level security;
+alter table market_trends enable row level security;
+alter table campaign_plans enable row level security;
+```
+
+For internal use, configure Row Level Security policies to allow the intended reads and writes with your anon key. For public production, add authentication and stricter policies before launch.
 
 ## Prompt Structure
 

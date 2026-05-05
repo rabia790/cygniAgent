@@ -82,6 +82,8 @@ export const CAMPAIGN_GOALS = [
 
 export const CAMPAIGN_DURATIONS = ["7 days", "14 days", "30 days"];
 
+export const CONTENT_STATUSES = ["draft", "approved", "used"];
+
 export const COMPANY_DETAILS = {
   name: "CygniSoft",
   subtitle:
