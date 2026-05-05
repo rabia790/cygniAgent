@@ -78,6 +78,10 @@ const plannerBadge = document.querySelector("#plannerBadge");
 const copyPlannerButton = document.querySelector("#copyPlannerButton");
 const plannerKnowledgeBadge = document.querySelector("#plannerKnowledgeBadge");
 
+const COMPANY_KNOWLEDGE_KEY = "cygnisoft_company_knowledge";
+const EMPTY_KNOWLEDGE_MESSAGE = "No company knowledge profile has been built yet.";
+// TODO: For multi-user production, move company knowledge storage to a database such as Supabase, Neon, Firebase, or Vercel KV.
+
 function fillSelect(select, values) {
   values.forEach((value) => {
     const option = document.createElement("option");
@@ -130,17 +134,6 @@ async function postJson(url, payload) {
   return data;
 }
 
-async function deleteJson(url) {
-  const response = await fetch(url, { method: "DELETE" });
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.error || "Something went wrong. Please try again.");
-  }
-
-  return data;
-}
-
 async function generateContent(event) {
   event.preventDefault();
 
@@ -155,6 +148,7 @@ async function generateContent(event) {
       contentType: contentTypeSelect.value,
       category: categorySelect.value,
       userRequest: userRequestInput.value,
+      companyKnowledge: getSavedKnowledge(),
     });
 
     output.value = data.content;
@@ -185,6 +179,7 @@ async function buildKnowledge(event) {
 
   try {
     const data = await postJson("/api/build-knowledge", { urls: knowledgeUrls.value });
+    saveKnowledgeToLocalStorage(data.output);
     knowledgeOutput.value = data.output;
     profileBadge.textContent = "Saved";
     knowledgeOutput.readOnly = true;
@@ -213,36 +208,22 @@ async function saveManualKnowledge() {
     return;
   }
 
+  saveKnowledgeToLocalStorage(knowledgeOutput.value);
+  knowledgeOutput.readOnly = true;
+  profileBadge.textContent = "Saved";
   saveKnowledgeButton.disabled = true;
-  setStatus(knowledgeStatus, "Saving manual company profile updates...", "neutral");
-
-  try {
-    const data = await postJson("/api/company-profile", { output: knowledgeOutput.value });
-    knowledgeOutput.value = data.output;
-    knowledgeOutput.readOnly = true;
-    profileBadge.textContent = "Saved";
-    updateKnowledgeUseBadge(true);
-    setStatus(knowledgeStatus, "Manual profile updates saved. Future generations will use this profile.", "success");
-  } catch (error) {
-    saveKnowledgeButton.disabled = false;
-    setStatus(knowledgeStatus, error.message, "error");
-  }
+  updateKnowledgeUseBadge(true);
+  setStatus(knowledgeStatus, "Manual profile updates saved in this browser. Future generations will use this profile.", "success");
 }
 
-async function clearKnowledge() {
-  setStatus(knowledgeStatus, "Clearing saved company knowledge...", "neutral");
-
-  try {
-    const data = await deleteJson("/api/company-profile");
-    knowledgeOutput.value = data.output;
-    knowledgeOutput.readOnly = true;
-    profileBadge.textContent = "Not built";
-    saveKnowledgeButton.disabled = true;
-    updateKnowledgeUseBadge(false);
-    setStatus(knowledgeStatus, "Saved company knowledge has been cleared.", "success");
-  } catch (error) {
-    setStatus(knowledgeStatus, error.message, "error");
-  }
+function clearKnowledge() {
+  localStorage.removeItem(COMPANY_KNOWLEDGE_KEY);
+  knowledgeOutput.value = EMPTY_KNOWLEDGE_MESSAGE;
+  knowledgeOutput.readOnly = true;
+  profileBadge.textContent = "Not built";
+  saveKnowledgeButton.disabled = true;
+  updateKnowledgeUseBadge(false);
+  setStatus(knowledgeStatus, "Saved company knowledge has been cleared from this browser.", "success");
 }
 
 async function reviewWebsite(event) {
@@ -259,7 +240,7 @@ async function reviewWebsite(event) {
   reviewBadge.textContent = "Working";
 
   try {
-    const data = await postJson("/api/website-review", { url: reviewUrl.value });
+    const data = await postJson("/api/website-review", { url: reviewUrl.value, companyKnowledge: getSavedKnowledge() });
     reviewOutput.value = data.output;
     reviewBadge.textContent = "Complete";
     setStatus(reviewStatus, "Website review complete.", "success");
@@ -288,6 +269,7 @@ async function reviewCompetitors(event) {
     const data = await postJson("/api/competitor-review", {
       cygnisoftUrls: cygnisoftCompareUrls.value,
       competitorUrls: competitorUrls.value,
+      companyKnowledge: getSavedKnowledge(),
     });
     competitorOutput.value = data.output;
     competitorBadge.textContent = "Complete";
@@ -319,6 +301,7 @@ async function generateMarketTrends(event) {
       region: marketRegion.value,
       researchFocus: researchFocus.value,
       notes: marketNotes.value,
+      companyKnowledge: getSavedKnowledge(),
     });
     marketOutput.value = data.output;
     marketBadge.textContent = data.source === "openai" ? "AI generated" : "Local generator";
@@ -353,6 +336,7 @@ async function generateCampaignPlan(event) {
       campaignGoal: campaignGoal.value,
       campaignDuration: campaignDuration.value,
       notes: plannerNotes.value,
+      companyKnowledge: getSavedKnowledge(),
     });
     plannerOutput.value = data.output;
     plannerBadge.textContent = data.source === "openai" ? "AI generated" : "Local generator";
@@ -430,27 +414,29 @@ function setupTabs() {
   showTab("generate");
 }
 
-async function loadSavedProfile() {
-  try {
-    const response = await fetch("/api/company-profile");
-    const data = await response.json();
-    knowledgeOutput.value = data.output || "";
-    knowledgeOutput.readOnly = true;
-    profileBadge.textContent = data.profile ? "Saved" : "Not built";
-    updateKnowledgeUseBadge(Boolean(data.profile));
-  } catch {
-    profileBadge.textContent = "Not loaded";
-    updateKnowledgeUseBadge(false);
-  }
+function loadSavedProfile() {
+  const savedKnowledge = getSavedKnowledge();
+  knowledgeOutput.value = savedKnowledge || EMPTY_KNOWLEDGE_MESSAGE;
+  knowledgeOutput.readOnly = true;
+  profileBadge.textContent = savedKnowledge ? "Saved" : "Not built";
+  updateKnowledgeUseBadge(Boolean(savedKnowledge));
 }
 
 function updateKnowledgeUseBadge(isUsing) {
-  knowledgeUseBadge.textContent = isUsing ? "Using saved CygniSoft knowledge" : "No saved company knowledge";
+  knowledgeUseBadge.textContent = isUsing ? "Using saved CygniSoft knowledge" : EMPTY_KNOWLEDGE_MESSAGE;
   knowledgeUseBadge.dataset.active = String(Boolean(isUsing));
   marketKnowledgeBadge.textContent = knowledgeUseBadge.textContent;
   marketKnowledgeBadge.dataset.active = knowledgeUseBadge.dataset.active;
   plannerKnowledgeBadge.textContent = knowledgeUseBadge.textContent;
   plannerKnowledgeBadge.dataset.active = knowledgeUseBadge.dataset.active;
+}
+
+function getSavedKnowledge() {
+  return localStorage.getItem(COMPANY_KNOWLEDGE_KEY) || "";
+}
+
+function saveKnowledgeToLocalStorage(profileText) {
+  localStorage.setItem(COMPANY_KNOWLEDGE_KEY, profileText);
 }
 
 function init() {

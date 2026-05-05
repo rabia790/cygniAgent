@@ -15,7 +15,7 @@ A clean web app that generates ready-to-use marketing content for CygniSoft staf
 - Website Knowledge Builder for public CygniSoft URLs
 - Website Review mode for page clarity, CTA, SEO, and content suggestions
 - Competitor Review mode for positioning, service, CTA, trust signal, and gap comparison
-- Persistent CygniSoft company knowledge saved in `data/company-profile.json`
+- Persistent CygniSoft company knowledge saved in browser `localStorage` with the key `cygnisoft_company_knowledge`
 - Manual profile editing, saving, and clearing controls
 - Generate Content badge showing when saved CygniSoft knowledge is active
 - Version 4 Market & Hiring Trends mode
@@ -24,13 +24,15 @@ A clean web app that generates ready-to-use marketing content for CygniSoft staf
 ## Version 2 Tabs
 
 - Generate Content: keeps the original marketing generator.
-- Build Company Knowledge: fetches user-provided CygniSoft URLs and saves a structured profile in `data/company-profile.json`.
+- Build Company Knowledge: fetches user-provided CygniSoft URLs and saves a structured profile in browser `localStorage`.
 - Website Review: reviews one CygniSoft page URL.
 - Competitor Review: compares CygniSoft pages or the saved profile against competitor URLs.
 - Market & Hiring Trends: creates practical market research for selected industries, regions, and research focus areas.
 - Lead & Campaign Planner: creates safe lead targeting strategy, outreach messaging, follow-up plans, and campaign next steps.
 
-The generator automatically includes the latest saved company knowledge profile in future prompts. The saved profile can be edited manually in the Build Company Knowledge tab, and it can also be cleared when you want to reset the app back to the default CygniSoft context.
+The browser automatically sends the latest saved company knowledge profile with Generate Content, Website Review, Competitor Review, Market & Hiring Trends, and Lead & Campaign Planner requests. The saved profile can be edited manually in the Build Company Knowledge tab, and it can also be cleared when you want to reset the app back to the default CygniSoft context.
+
+This localStorage approach is intended for internal Version 2 use and works on Vercel without a writable server folder. TODO: for multi-user production, move company knowledge storage to a database such as Supabase, Neon, Firebase, or Vercel KV.
 
 ## Testing Version 4
 

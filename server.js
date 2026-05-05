@@ -3,35 +3,8 @@ const fs = require("fs");
 const path = require("path");
 
 const PUBLIC_DIR = path.join(__dirname, "public");
-const DATA_DIR = path.join(__dirname, "data");
-const PROFILE_PATH = path.join(DATA_DIR, "company-profile.json");
-
-function loadEnvFile() {
-  const envPath = path.join(__dirname, ".env");
-  if (!fs.existsSync(envPath)) return;
-
-  const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
-  lines.forEach((line) => {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) return;
-
-    const separatorIndex = trimmed.indexOf("=");
-    if (separatorIndex === -1) return;
-
-    const key = trimmed.slice(0, separatorIndex).trim();
-    const rawValue = trimmed.slice(separatorIndex + 1).trim();
-    const value = rawValue.replace(/^["']|["']$/g, "");
-
-    if (key && process.env[key] === undefined) {
-      process.env[key] = value;
-    }
-  });
-}
-
-loadEnvFile();
 
 const PORT = Number(process.env.PORT || 3000);
-let latestCompanyProfile = loadCompanyProfile();
 
 const companyDetails = {
   name: "CygniSoft",
@@ -318,10 +291,10 @@ function readBody(req) {
   });
 }
 
-function buildPrompt({ contentType, category, userRequest }) {
+function buildPrompt({ contentType, category, userRequest }, companyProfile = null) {
   const guide = categoryGuidance[category] || categoryGuidance["Staffing Services"];
   const format = contentTypeFormats[contentType] || contentTypeFormats["LinkedIn Post"];
-  const profileText = formatKnowledgeProfileForPrompt(latestCompanyProfile);
+  const profileText = formatKnowledgeProfileForPrompt(companyProfile);
 
   return `You are the AI Marketing Agent for CygniSoft.
 
@@ -367,7 +340,7 @@ Required output format for ${contentType}:
 ${format}`;
 }
 
-function buildFallbackContent({ contentType, category, userRequest }) {
+function buildFallbackContent({ contentType, category, userRequest }, companyProfile = null) {
   const guide = categoryGuidance[category] || categoryGuidance["Staffing Services"];
   const categoryPhrase = categorySentencePhrases[category] || category.toLowerCase();
   const benefits = guide.benefits.map((benefit) => `- ${benefit}`).join("\n");
@@ -378,7 +351,7 @@ function buildFallbackContent({ contentType, category, userRequest }) {
   const linkedinRequestContext = userNeed
     ? `\n\nThis matters for ${userNeed}. The problem is not just filling a gap. It is protecting time, service quality, and day-to-day momentum.`
     : "";
-  const profileContext = getProfileCopyContext();
+  const profileContext = getProfileCopyContext(companyProfile);
 
   const templates = {
     "LinkedIn Post": `When ${categoryPhrase} becomes hard to manage, the impact shows up quickly.
@@ -613,28 +586,6 @@ function cleanUserNeed(value) {
     .trim();
 }
 
-function loadCompanyProfile() {
-  try {
-    if (!fs.existsSync(PROFILE_PATH)) return null;
-    return JSON.parse(fs.readFileSync(PROFILE_PATH, "utf8"));
-  } catch {
-    return null;
-  }
-}
-
-function saveCompanyProfile(profile) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(PROFILE_PATH, JSON.stringify(profile, null, 2));
-  latestCompanyProfile = profile;
-}
-
-function clearCompanyProfile() {
-  if (fs.existsSync(PROFILE_PATH)) {
-    fs.unlinkSync(PROFILE_PATH);
-  }
-  latestCompanyProfile = null;
-}
-
 function formatKnowledgeProfileForPrompt(profile) {
   if (!profile) {
     return "No website knowledge profile has been built yet. Use only the default CygniSoft context and clearly avoid unsupported details.";
@@ -659,16 +610,16 @@ function formatKnowledgeProfileForPrompt(profile) {
     .join("\n");
 }
 
-function getProfileCopyContext() {
-  if (!latestCompanyProfile) return "";
+function getProfileCopyContext(profile) {
+  if (!profile) return "";
 
   const services = [
-    ...(latestCompanyProfile.staffingServices || []),
-    ...(latestCompanyProfile.softwareItServices || []),
-    ...(latestCompanyProfile.healthcareServices || []),
-    ...(latestCompanyProfile.technologyServices || []),
+    ...(profile.staffingServices || []),
+    ...(profile.softwareItServices || []),
+    ...(profile.healthcareServices || []),
+    ...(profile.technologyServices || []),
   ].slice(0, 5);
-  const ctas = (latestCompanyProfile.existingCtas || []).slice(0, 2);
+  const ctas = (profile.existingCtas || []).slice(0, 2);
 
   if (!services.length && !ctas.length) return "";
 
@@ -680,7 +631,7 @@ function getProfileCopyContext() {
     .join("; ")}.`;
 }
 
-async function generateWithOpenAI(payload) {
+async function generateWithOpenAI(payload, companyProfile = null) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
 
@@ -699,7 +650,7 @@ async function generateWithOpenAI(payload) {
           content:
             "You write ready-to-use marketing content for CygniSoft. Follow the requested content format exactly, make every answer specific to the selected business category, use simple business language, avoid fake claims, and never overpromise.",
         },
-        { role: "user", content: buildPrompt(payload) },
+        { role: "user", content: buildPrompt(payload, companyProfile) },
       ],
       temperature: 0.7,
     }),
@@ -786,7 +737,6 @@ async function handleBuildKnowledge(req, res) {
     }
 
     profile.output = formatCompanyKnowledgeProfile(profile);
-    saveCompanyProfile(profile);
     sendJson(res, 200, { profile, output: profile.output, pages });
   } catch (error) {
     console.error(error);
@@ -794,45 +744,11 @@ async function handleBuildKnowledge(req, res) {
   }
 }
 
-async function handleUpdateCompanyProfile(req, res) {
-  try {
-    const { output } = JSON.parse((await readBody(req)) || "{}");
-    const profileText = String(output || "").trim();
-
-    if (!profileText) {
-      sendJson(res, 400, { error: "Please enter company profile content before saving." });
-      return;
-    }
-
-    const profile = {
-      ...(latestCompanyProfile || {}),
-      ...parseManualProfile(profileText),
-      updatedAt: new Date().toISOString(),
-      source: "manual",
-      output: profileText,
-    };
-
-    saveCompanyProfile(profile);
-    sendJson(res, 200, { profile, output: profile.output });
-  } catch (error) {
-    console.error(error);
-    sendJson(res, 500, { error: error.message || "Unable to save the company profile." });
-  }
-}
-
-async function handleClearCompanyProfile(_req, res) {
-  try {
-    clearCompanyProfile();
-    sendJson(res, 200, { profile: null, output: "No company knowledge profile has been built yet." });
-  } catch (error) {
-    console.error(error);
-    sendJson(res, 500, { error: error.message || "Unable to clear the company profile." });
-  }
-}
-
 async function handleWebsiteReview(req, res) {
   try {
-    const { url } = JSON.parse((await readBody(req)) || "{}");
+    const payload = JSON.parse((await readBody(req)) || "{}");
+    const { url } = payload;
+    const companyProfile = getCompanyProfileFromPayload(payload);
     const urlList = parseUrlList(url);
 
     if (!urlList.length) {
@@ -848,7 +764,7 @@ async function handleWebsiteReview(req, res) {
 
     const aiReview = await generateAnalysisWithOpenAI({
       task: "Review this CygniSoft website page for marketing clarity, content quality, CTAs, and SEO.",
-      context: formatPagesForPrompt([page]),
+      context: `${companyProfile ? `Saved CygniSoft knowledge profile:\n${formatKnowledgeProfileForPrompt(companyProfile)}\n\n` : ""}${formatPagesForPrompt([page])}`,
       format: websiteReviewFormat,
     });
     const output = aiReview || formatWebsiteReview(page, extractKnowledgeFromPages([page]));
@@ -861,11 +777,13 @@ async function handleWebsiteReview(req, res) {
 
 async function handleCompetitorReview(req, res) {
   try {
-    const { cygnisoftUrls, competitorUrls } = JSON.parse((await readBody(req)) || "{}");
+    const payload = JSON.parse((await readBody(req)) || "{}");
+    const { cygnisoftUrls, competitorUrls } = payload;
+    const companyProfile = getCompanyProfileFromPayload(payload);
     const cygniUrls = parseUrlList(cygnisoftUrls);
     const compUrls = parseUrlList(competitorUrls);
 
-    if (!cygniUrls.length && !latestCompanyProfile) {
+    if (!cygniUrls.length && !companyProfile) {
       sendJson(res, 400, {
         error:
           "Please enter at least one CygniSoft URL or build the company knowledge profile before running competitor review.",
@@ -892,7 +810,7 @@ async function handleCompetitorReview(req, res) {
     }
 
     const context = [
-      latestCompanyProfile ? `Existing CygniSoft knowledge profile:\n${formatKnowledgeProfileForPrompt(latestCompanyProfile)}` : "",
+      companyProfile ? `Existing CygniSoft knowledge profile:\n${formatKnowledgeProfileForPrompt(companyProfile)}` : "",
       goodCygniPages.length ? `CygniSoft pages:\n${formatPagesForPrompt(goodCygniPages)}` : "",
       `Competitor pages:\n${formatPagesForPrompt(goodCompetitorPages)}`,
     ]
@@ -905,8 +823,8 @@ async function handleCompetitorReview(req, res) {
       context,
       format: competitorReviewFormat,
     });
-    const output = aiReview || formatCompetitorReview(goodCygniPages, goodCompetitorPages);
-    sendJson(res, 200, { output, cygnisoftPages: cygniPages, competitorPages });
+    const output = aiReview || formatCompetitorReview(goodCygniPages, goodCompetitorPages, companyProfile);
+    sendJson(res, 200, { output, cygnisoftPages: cygniPages, competitorPages, usingProfile: Boolean(companyProfile) });
   } catch (error) {
     console.error(error);
     sendJson(res, 500, { error: error.message || "Unable to complete competitor review." });
@@ -917,6 +835,7 @@ async function handleMarketTrends(req, res) {
   try {
     const payload = JSON.parse((await readBody(req)) || "{}");
     const { industry, region, researchFocus, notes } = payload;
+    const companyProfile = getCompanyProfileFromPayload(payload);
 
     if (!marketIndustries.includes(industry)) {
       sendJson(res, 400, { error: "Please select a valid industry." });
@@ -943,11 +862,11 @@ async function handleMarketTrends(req, res) {
     const aiOutput = await generateAnalysisWithOpenAI({
       task:
         "Create Version 4 market and hiring trend research for CygniSoft. No live web search is available unless sources are explicitly provided. Use the saved company profile when present, avoid exact live claims, and keep the output practical for staffing and software marketing decisions.",
-      context: buildMarketResearchPromptContext(cleanPayload),
+      context: buildMarketResearchPromptContext(cleanPayload, companyProfile),
       format: marketResearchFormat,
     });
-    const output = aiOutput || buildMarketTrendsFallback(cleanPayload);
-    sendJson(res, 200, { output, source: aiOutput ? "openai" : "local", usingProfile: Boolean(latestCompanyProfile) });
+    const output = aiOutput || buildMarketTrendsFallback(cleanPayload, companyProfile);
+    sendJson(res, 200, { output, source: aiOutput ? "openai" : "local", usingProfile: Boolean(companyProfile) });
   } catch (error) {
     console.error(error);
     sendJson(res, 500, { error: error.message || "Unable to generate market and hiring trend research." });
@@ -958,6 +877,7 @@ async function handleLeadCampaignPlan(req, res) {
   try {
     const payload = JSON.parse((await readBody(req)) || "{}");
     const { service, targetAudience, region, campaignGoal, campaignDuration, notes } = payload;
+    const companyProfile = getCompanyProfileFromPayload(payload);
 
     if (!plannerServices.includes(service)) {
       sendJson(res, 400, { error: "Please select a valid service or product." });
@@ -996,11 +916,11 @@ async function handleLeadCampaignPlan(req, res) {
     const aiOutput = await generateAnalysisWithOpenAI({
       task:
         "Create Version 5 lead generation and campaign planning output for CygniSoft. Do not scrape personal data, do not create private contact lists, do not promise guaranteed leads or sales, and keep outreach professional with personalization placeholders.",
-      context: buildLeadPlannerPromptContext(cleanPayload),
+      context: buildLeadPlannerPromptContext(cleanPayload, companyProfile),
       format: leadPlannerFormat,
     });
-    const output = aiOutput || buildLeadPlannerFallback(cleanPayload);
-    sendJson(res, 200, { output, source: aiOutput ? "openai" : "local", usingProfile: Boolean(latestCompanyProfile) });
+    const output = aiOutput || buildLeadPlannerFallback(cleanPayload, companyProfile);
+    sendJson(res, 200, { output, source: aiOutput ? "openai" : "local", usingProfile: Boolean(companyProfile) });
   } catch (error) {
     console.error(error);
     sendJson(res, 500, { error: error.message || "Unable to generate lead and campaign plan." });
@@ -1177,8 +1097,8 @@ Content Improvement Suggestions
 ${bulletList(profile.recommendedImprovements)}`;
 }
 
-function formatCompetitorReview(cygniPages, competitorPages) {
-  const cygniProfile = cygniPages.length ? extractKnowledgeFromPages(cygniPages) : latestCompanyProfile;
+function formatCompetitorReview(cygniPages, competitorPages, companyProfile = null) {
+  const cygniProfile = cygniPages.length ? extractKnowledgeFromPages(cygniPages) : companyProfile;
   const compProfile = extractKnowledgeFromPages(competitorPages);
 
   return `Executive Summary
@@ -1217,9 +1137,9 @@ ${bulletList([
   ])}`;
 }
 
-function buildMarketResearchPromptContext({ industry, region, researchFocus, notes }) {
+function buildMarketResearchPromptContext({ industry, region, researchFocus, notes }, companyProfile = null) {
   return `CygniSoft profile:
-${formatKnowledgeProfileForPrompt(latestCompanyProfile)}
+${formatKnowledgeProfileForPrompt(companyProfile)}
 
 Market research inputs:
 Industry: ${industry}
@@ -1236,9 +1156,9 @@ Rules:
 - Include Sources / Notes for future web search citations.`;
 }
 
-function buildLeadPlannerPromptContext({ service, targetAudience, region, campaignGoal, campaignDuration, notes }) {
+function buildLeadPlannerPromptContext({ service, targetAudience, region, campaignGoal, campaignDuration, notes }, companyProfile = null) {
   return `CygniSoft profile:
-${formatKnowledgeProfileForPrompt(latestCompanyProfile)}
+${formatKnowledgeProfileForPrompt(companyProfile)}
 
 Lead and campaign inputs:
 Service/Product: ${service}
@@ -1257,9 +1177,9 @@ Safety rules:
 - Make outputs ready to copy and use.`;
 }
 
-function buildMarketTrendsFallback({ industry, region, researchFocus, notes }) {
+function buildMarketTrendsFallback({ industry, region, researchFocus, notes }, companyProfile = null) {
   const industryPlan = marketPlaybooks[industry] || marketPlaybooks["General Market"];
-  const profileNote = latestCompanyProfile
+  const profileNote = companyProfile
     ? "Saved CygniSoft knowledge was considered when shaping these recommendations."
     : "No saved CygniSoft company profile is available yet, so this uses the default CygniSoft context.";
   const notesLine = notes ? `User notes considered: ${notes}` : "No additional notes were provided.";
@@ -1311,9 +1231,9 @@ Sources / Notes
 - Add verified job board, labor market, industry association, or government sources here if web search is added later.`;
 }
 
-function buildLeadPlannerFallback({ service, targetAudience, region, campaignGoal, campaignDuration, notes }) {
+function buildLeadPlannerFallback({ service, targetAudience, region, campaignGoal, campaignDuration, notes }, companyProfile = null) {
   const plan = campaignPlaybooks[service] || campaignPlaybooks["Custom Software Development"];
-  const profileNote = latestCompanyProfile
+  const profileNote = companyProfile
     ? "Use the saved CygniSoft knowledge profile to keep service descriptions aligned with current company messaging."
     : "Build the CygniSoft company knowledge profile for more company-specific language.";
   const cadence = buildCampaignCadence(campaignDuration);
@@ -1601,6 +1521,27 @@ function parseManualProfile(output) {
     trustSignals: splitList(sectionMap["Trust Signals"]),
     missingInformation: splitList(sectionMap["Missing Information"]),
     recommendedImprovements: splitList(sectionMap["Recommended Improvements"]),
+  };
+}
+
+function getCompanyProfileFromPayload(payload) {
+  const rawKnowledge = payload?.companyKnowledge;
+  if (!rawKnowledge) return null;
+
+  if (typeof rawKnowledge === "object") {
+    return {
+      ...rawKnowledge,
+      output: rawKnowledge.output || formatCompanyKnowledgeProfile(rawKnowledge),
+    };
+  }
+
+  const profileText = String(rawKnowledge || "").trim();
+  if (!profileText || profileText === "No company knowledge profile has been built yet.") return null;
+
+  return {
+    ...parseManualProfile(profileText),
+    source: "localStorage",
+    output: profileText,
   };
 }
 
@@ -1985,6 +1926,7 @@ async function handleGenerate(req, res) {
     const body = await readBody(req);
     const payload = JSON.parse(body || "{}");
     const { contentType, category, userRequest } = payload;
+    const companyProfile = getCompanyProfileFromPayload(payload);
 
     if (!contentTypes.includes(contentType)) {
       sendJson(res, 400, { error: "Please select a valid content type." });
@@ -2007,9 +1949,9 @@ async function handleGenerate(req, res) {
       userRequest: String(userRequest).trim(),
     };
 
-    const openAiContent = await generateWithOpenAI(cleanPayload);
-    const content = openAiContent || buildFallbackContent(cleanPayload);
-    sendJson(res, 200, { content, source: openAiContent ? "openai" : "local", usingProfile: Boolean(latestCompanyProfile) });
+    const openAiContent = await generateWithOpenAI(cleanPayload, companyProfile);
+    const content = openAiContent || buildFallbackContent(cleanPayload, companyProfile);
+    sendJson(res, 200, { content, source: openAiContent ? "openai" : "local", usingProfile: Boolean(companyProfile) });
   } catch (error) {
     console.error(error);
     sendJson(res, 500, {
@@ -2047,24 +1989,6 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "POST" && req.url === "/api/lead-campaign-plan") {
     handleLeadCampaignPlan(req, res);
-    return;
-  }
-
-  if (req.method === "GET" && req.url === "/api/company-profile") {
-    sendJson(res, 200, {
-      profile: latestCompanyProfile,
-      output: latestCompanyProfile?.output || "No company knowledge profile has been built yet.",
-    });
-    return;
-  }
-
-  if (req.method === "POST" && req.url === "/api/company-profile") {
-    handleUpdateCompanyProfile(req, res);
-    return;
-  }
-
-  if (req.method === "DELETE" && req.url === "/api/company-profile") {
-    handleClearCompanyProfile(req, res);
     return;
   }
 
