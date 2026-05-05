@@ -4,18 +4,33 @@ import {
   CAMPAIGN_GOALS,
   COMPANY_DETAILS,
   CONTENT_STATUSES,
+  CONTENT_TONES,
   CONTENT_TYPES,
   MARKET_INDUSTRIES,
   PLANNER_SERVICES,
   RESEARCH_FOCUS_OPTIONS,
   TARGET_AUDIENCES,
+  VARIATION_COUNTS,
 } from "./constants.js";
 
 const form = document.querySelector("#generatorForm");
 const contentTypeSelect = document.querySelector("#contentType");
 const categorySelect = document.querySelector("#category");
+const generateTargetAudience = document.querySelector("#generateTargetAudience");
+const generateRegion = document.querySelector("#generateRegion");
+const generateCampaignGoal = document.querySelector("#generateCampaignGoal");
+const generateTone = document.querySelector("#generateTone");
+const marketAwareMode = document.querySelector("#marketAwareMode");
+const suggestBestService = document.querySelector("#suggestBestService");
+const variationCount = document.querySelector("#variationCount");
+const useLiveSearch = document.querySelector("#useLiveSearch");
 const userRequestInput = document.querySelector("#userRequest");
 const output = document.querySelector("#output");
+const recommendationPanel = document.querySelector("#recommendationPanel");
+const recommendationOutput = document.querySelector("#recommendationOutput");
+const qualityPanel = document.querySelector("#qualityPanel");
+const qualityOutput = document.querySelector("#qualityOutput");
+const searchNote = document.querySelector("#searchNote");
 const generateButton = document.querySelector("#generateButton");
 const copyButton = document.querySelector("#copyButton");
 const saveContentButton = document.querySelector("#saveContentButton");
@@ -90,9 +105,33 @@ const libraryStatus = document.querySelector("#libraryStatus");
 const libraryBadge = document.querySelector("#libraryBadge");
 const libraryList = document.querySelector("#libraryList");
 
+const companySelect = document.querySelector("#companySelect");
+const createCompanyButton = document.querySelector("#createCompanyButton");
+const editCompanyButton = document.querySelector("#editCompanyButton");
+const deleteCompanyButton = document.querySelector("#deleteCompanyButton");
+const selectedCompanyBadge = document.querySelector("#selectedCompanyBadge");
+const companyForm = document.querySelector("#companyForm");
+const companyNameInput = document.querySelector("#companyNameInput");
+const companyIndustryInput = document.querySelector("#companyIndustryInput");
+const companyWebsiteUrlsInput = document.querySelector("#companyWebsiteUrlsInput");
+const companyServicesInput = document.querySelector("#companyServicesInput");
+const companyProductsInput = document.querySelector("#companyProductsInput");
+const companyAudienceInput = document.querySelector("#companyAudienceInput");
+const companyCompetitorsInput = document.querySelector("#companyCompetitorsInput");
+const companyToneInput = document.querySelector("#companyToneInput");
+const companyNotesInput = document.querySelector("#companyNotesInput");
+const saveCompanyButton = document.querySelector("#saveCompanyButton");
+const cancelCompanyButton = document.querySelector("#cancelCompanyButton");
+const companyStatus = document.querySelector("#companyStatus");
+
 const COMPANY_KNOWLEDGE_KEY = "cygnisoft_company_knowledge";
+const SELECTED_COMPANY_KEY = "cygnisoft_selected_company_id";
 const EMPTY_KNOWLEDGE_MESSAGE = "No company knowledge profile has been built yet.";
-// TODO: For multi-user production, move company knowledge storage to a database such as Supabase, Neon, Firebase, or Vercel KV.
+// Local storage remains a browser fallback when Supabase is not configured.
+let companies = [];
+let selectedCompany = null;
+let editingCompanyId = "";
+let lastGenerationMeta = null;
 
 function fillSelect(select, values) {
   values.forEach((value) => {
@@ -180,24 +219,95 @@ function showSaveWarning(statusElement, data, successMessage) {
   setStatus(statusElement, successMessage, "success");
 }
 
+function requireSelectedCompany(statusElement) {
+  if (selectedCompany) return true;
+  setStatus(statusElement, "Please create or select a company profile first.", "error");
+  return false;
+}
+
+function getCompanyRequestContext() {
+  return {
+    selectedCompany,
+    companyId: selectedCompany?.id || null,
+    companyKnowledge: getSavedKnowledge(),
+  };
+}
+
+function renderRecommendation(recommendation) {
+  if (!recommendation) {
+    recommendationPanel.hidden = true;
+    recommendationOutput.textContent = "";
+    return;
+  }
+  recommendationPanel.hidden = false;
+  recommendationOutput.textContent = [
+    `Promotion Match Score: ${recommendation.promotionMatchScore}/100`,
+    `Recommended service/product: ${recommendation.recommendedService}`,
+    `Best marketing angle: ${recommendation.bestMarketingAngle}`,
+    `Target audience: ${recommendation.targetAudience}`,
+    `Main pain point: ${recommendation.mainPainPoint}`,
+    `Recommended CTA: ${recommendation.recommendedCta}`,
+    `Reasoning: ${recommendation.reasoning}`,
+  ].join("\n");
+}
+
+function renderQualityScore(score) {
+  if (!score) {
+    qualityPanel.hidden = true;
+    qualityOutput.textContent = "";
+    return;
+  }
+  qualityPanel.hidden = false;
+  qualityOutput.textContent = [
+    `Overall content score: ${score.overall}/100`,
+    `Clarity score: ${score.clarity}/100`,
+    `Audience fit score: ${score.audienceFit}/100`,
+    `CTA strength score: ${score.ctaStrength}/100`,
+    `Brand fit score: ${score.brandFit}/100`,
+    "Improvement suggestions:",
+    ...(score.improvementSuggestions || []).map((item) => `- ${item}`),
+  ].join("\n");
+}
+
 async function generateContent(event) {
   event.preventDefault();
 
   if (!validateRequest()) return;
+  if (!requireSelectedCompany(statusMessage)) return;
 
   setLoading(generateButton, true, "Generating...", "Generate Marketing Content");
-  setStatus(statusMessage, "Creating ready-to-use content using the latest CygniSoft knowledge profile...", "neutral");
+  setStatus(statusMessage, "Creating ready-to-use content using the selected company profile...", "neutral");
   sourceBadge.textContent = "Working";
 
   try {
     const data = await postJson("/api/generate", {
       contentType: contentTypeSelect.value,
       category: categorySelect.value,
+      targetAudience: generateTargetAudience.value,
+      region: generateRegion.value,
+      campaignGoal: generateCampaignGoal.value,
+      tone: generateTone.value,
+      marketAwareMode: marketAwareMode.checked,
+      suggestBestService: suggestBestService.checked,
+      variationCount: variationCount.value,
+      useLiveSearch: useLiveSearch.checked,
       userRequest: userRequestInput.value,
-      companyKnowledge: getSavedKnowledge(),
+      ...getCompanyRequestContext(),
     });
 
     output.value = data.content;
+    lastGenerationMeta = {
+      recommendation: data.recommendation,
+      qualityScore: data.qualityScore,
+      selectedCompanyProfile: selectedCompany,
+      strategy: data.strategy,
+      searchNote: data.searchNote,
+      liveSearchResults: data.liveSearchResults || [],
+    };
+    renderRecommendation(data.recommendation);
+    renderQualityScore(data.qualityScore);
+    searchNote.textContent = data.searchNote || "";
+    searchNote.dataset.type = data.liveSearchUsed ? "success" : "neutral";
     sourceBadge.textContent = data.source === "openai" ? "AI generated" : "Local generator";
     updateKnowledgeUseBadge(data.usingProfile);
     setStatus(statusMessage, "Content generated. You can edit it below before copying or saving.", "success");
@@ -213,20 +323,25 @@ async function generateContent(event) {
 
 async function buildKnowledge(event) {
   event.preventDefault();
+  if (!requireSelectedCompany(knowledgeStatus)) return;
 
   if (!knowledgeUrls.value.trim()) {
-    setStatus(knowledgeStatus, "Please enter at least one CygniSoft website URL.", "error");
+    setStatus(knowledgeStatus, "Please enter at least one company website URL.", "error");
     knowledgeUrls.focus();
     return;
   }
 
   setLoading(knowledgeButton, true, "Reading pages...", "Build Knowledge Profile");
-  setStatus(knowledgeStatus, "Fetching pages and extracting CygniSoft website knowledge...", "neutral");
+  setStatus(knowledgeStatus, "Fetching pages and extracting the selected company's website profile...", "neutral");
   profileBadge.textContent = "Working";
 
   try {
-    const data = await postJson("/api/build-knowledge", { urls: knowledgeUrls.value });
+    const data = await postJson("/api/build-knowledge", { urls: knowledgeUrls.value, ...getCompanyRequestContext() });
     saveKnowledgeToLocalStorage(data.output);
+    if (selectedCompany) {
+      selectedCompany.profile = data.profile || { output: data.output };
+      selectedCompany.profile.output = data.output;
+    }
     knowledgeOutput.value = data.output;
     profileBadge.textContent = "Saved";
     knowledgeOutput.readOnly = true;
@@ -258,8 +373,12 @@ async function saveManualKnowledge() {
   }
 
   try {
-    const data = await postJson("/api/company-knowledge", { output: knowledgeOutput.value });
+    const data = await postJson("/api/company-knowledge", { output: knowledgeOutput.value, ...getCompanyRequestContext() });
     saveKnowledgeToLocalStorage(data.output || knowledgeOutput.value);
+    if (selectedCompany) {
+      selectedCompany.profile = data.profile || { output: data.output || knowledgeOutput.value };
+      selectedCompany.profile.output = data.output || knowledgeOutput.value;
+    }
     knowledgeOutput.value = data.output || knowledgeOutput.value;
     knowledgeOutput.readOnly = true;
     profileBadge.textContent = "Saved";
@@ -280,12 +399,14 @@ async function saveManualKnowledge() {
 
 async function clearKnowledge() {
   try {
-    await deleteJson("/api/company-knowledge");
+    const suffix = selectedCompany?.id ? `?companyId=${encodeURIComponent(selectedCompany.id)}` : "";
+    await deleteJson(`/api/company-knowledge${suffix}`);
     setStatus(knowledgeStatus, "Saved company knowledge has been cleared from Supabase and this browser.", "success");
   } catch (error) {
     setStatus(knowledgeStatus, `Cleared from this browser, but Supabase clear failed: ${error.message}`, "error");
   }
   localStorage.removeItem(COMPANY_KNOWLEDGE_KEY);
+  if (selectedCompany) selectedCompany.profile = {};
   knowledgeOutput.value = EMPTY_KNOWLEDGE_MESSAGE;
   knowledgeOutput.readOnly = true;
   profileBadge.textContent = "Not built";
@@ -296,9 +417,10 @@ async function clearKnowledge() {
 
 async function reviewWebsite(event) {
   event.preventDefault();
+  if (!requireSelectedCompany(reviewStatus)) return;
 
   if (!reviewUrl.value.trim()) {
-    setStatus(reviewStatus, "Please enter a CygniSoft page URL to review.", "error");
+    setStatus(reviewStatus, "Please enter a company page URL to review.", "error");
     reviewUrl.focus();
     return;
   }
@@ -308,7 +430,7 @@ async function reviewWebsite(event) {
   reviewBadge.textContent = "Working";
 
   try {
-    const data = await postJson("/api/website-review", { url: reviewUrl.value, companyKnowledge: getSavedKnowledge() });
+    const data = await postJson("/api/website-review", { url: reviewUrl.value, ...getCompanyRequestContext() });
     reviewOutput.value = data.output;
     reviewBadge.textContent = "Complete";
     showSaveWarning(reviewStatus, data, "Website review complete");
@@ -322,6 +444,7 @@ async function reviewWebsite(event) {
 
 async function reviewCompetitors(event) {
   event.preventDefault();
+  if (!requireSelectedCompany(competitorStatus)) return;
 
   if (!competitorUrls.value.trim()) {
     setStatus(competitorStatus, "Please enter at least one competitor URL.", "error");
@@ -337,7 +460,7 @@ async function reviewCompetitors(event) {
     const data = await postJson("/api/competitor-review", {
       cygnisoftUrls: cygnisoftCompareUrls.value,
       competitorUrls: competitorUrls.value,
-      companyKnowledge: getSavedKnowledge(),
+      ...getCompanyRequestContext(),
     });
     competitorOutput.value = data.output;
     competitorBadge.textContent = "Complete";
@@ -352,6 +475,7 @@ async function reviewCompetitors(event) {
 
 async function generateMarketTrends(event) {
   event.preventDefault();
+  if (!requireSelectedCompany(marketStatus)) return;
 
   if (!marketRegion.value.trim()) {
     setStatus(marketStatus, "Please enter a region for the research.", "error");
@@ -369,7 +493,7 @@ async function generateMarketTrends(event) {
       region: marketRegion.value,
       researchFocus: researchFocus.value,
       notes: marketNotes.value,
-      companyKnowledge: getSavedKnowledge(),
+      ...getCompanyRequestContext(),
     });
     marketOutput.value = data.output;
     marketBadge.textContent = data.source === "openai" ? "AI generated" : "Local generator";
@@ -385,6 +509,7 @@ async function generateMarketTrends(event) {
 
 async function generateCampaignPlan(event) {
   event.preventDefault();
+  if (!requireSelectedCompany(plannerStatus)) return;
 
   if (!plannerRegion.value.trim()) {
     setStatus(plannerStatus, "Please enter a region for the campaign.", "error");
@@ -404,7 +529,7 @@ async function generateCampaignPlan(event) {
       campaignGoal: campaignGoal.value,
       campaignDuration: campaignDuration.value,
       notes: plannerNotes.value,
-      companyKnowledge: getSavedKnowledge(),
+      ...getCompanyRequestContext(),
     });
     plannerOutput.value = data.output;
     plannerBadge.textContent = data.source === "openai" ? "AI generated" : "Local generator";
@@ -449,9 +574,17 @@ async function saveGeneratedContent() {
       title: `${contentTypeSelect.value} - ${categorySelect.value}`,
       contentType: contentTypeSelect.value,
       businessCategory: categorySelect.value,
+      targetAudience: generateTargetAudience.value,
+      region: generateRegion.value,
+      campaignGoal: generateCampaignGoal.value,
+      tone: generateTone.value,
+      recommendation: lastGenerationMeta?.recommendation || null,
+      qualityScore: lastGenerationMeta?.qualityScore || null,
+      selectedCompanyProfile: lastGenerationMeta?.selectedCompanyProfile || selectedCompany || null,
       userRequest: userRequestInput.value,
       generatedOutput: output.value,
       status: "draft",
+      companyId: selectedCompany?.id || null,
     });
     setStatus(statusMessage, "Saved to Content Library.", "success");
     loadLibrary();
@@ -473,6 +606,7 @@ async function loadLibrary(event) {
     const params = new URLSearchParams();
     if (libraryContentType.value) params.set("contentType", libraryContentType.value);
     if (libraryBusinessCategory.value) params.set("businessCategory", libraryBusinessCategory.value);
+    if (selectedCompany?.id) params.set("companyId", selectedCompany.id);
     const response = await fetch(`/api/saved-marketing-content?${params.toString()}`);
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Unable to load saved content.");
@@ -569,7 +703,19 @@ function resetForm() {
   form.reset();
   contentTypeSelect.value = CONTENT_TYPES[0];
   categorySelect.value = BUSINESS_CATEGORIES[0];
+  generateTargetAudience.value = TARGET_AUDIENCES[0];
+  generateCampaignGoal.value = CAMPAIGN_GOALS[0];
+  generateTone.value = CONTENT_TONES[0];
+  variationCount.value = VARIATION_COUNTS[0];
+  marketAwareMode.checked = true;
+  suggestBestService.checked = true;
+  useLiveSearch.checked = false;
+  generateRegion.value = "";
   output.value = "";
+  lastGenerationMeta = null;
+  renderRecommendation(null);
+  renderQualityScore(null);
+  searchNote.textContent = "";
   copyButton.disabled = true;
   saveContentButton.disabled = true;
   sourceBadge.textContent = "Ready";
@@ -646,7 +792,11 @@ function loadSavedProfile() {
 }
 
 function updateKnowledgeUseBadge(isUsing) {
-  knowledgeUseBadge.textContent = isUsing ? "Using saved CygniSoft knowledge" : EMPTY_KNOWLEDGE_MESSAGE;
+  knowledgeUseBadge.textContent = selectedCompany
+    ? isUsing
+      ? `Using selected company profile: ${selectedCompany.company_name}`
+      : EMPTY_KNOWLEDGE_MESSAGE
+    : "Please create or select a company profile first.";
   knowledgeUseBadge.dataset.active = String(Boolean(isUsing));
   marketKnowledgeBadge.textContent = knowledgeUseBadge.textContent;
   marketKnowledgeBadge.dataset.active = knowledgeUseBadge.dataset.active;
@@ -662,11 +812,181 @@ function saveKnowledgeToLocalStorage(profileText) {
   localStorage.setItem(COMPANY_KNOWLEDGE_KEY, profileText);
 }
 
+async function loadCompanies() {
+  try {
+    const response = await fetch("/api/companies");
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Unable to load company profiles.");
+    companies = data.companies || [];
+  } catch (error) {
+    companies = [createDefaultCompany()];
+    setStatus(companyStatus, `${error.message} Using local CygniSoft example profile.`, "error");
+  }
+  renderCompanySelect();
+}
+
+function renderCompanySelect() {
+  const previousId = localStorage.getItem(SELECTED_COMPANY_KEY);
+  companySelect.innerHTML = `<option value="">Select a company profile</option>`;
+  companies.forEach((company, index) => {
+    const option = document.createElement("option");
+    option.value = company.id || `local-${index}`;
+    option.textContent = company.company_name || "Untitled Company";
+    companySelect.appendChild(option);
+  });
+  const match = companies.find((company, index) => (company.id || `local-${index}`) === previousId) || companies[0] || null;
+  selectCompany(match);
+}
+
+function selectCompany(company) {
+  selectedCompany = company || null;
+  if (selectedCompany) {
+    const selectedId = selectedCompany.id || `local-${companies.indexOf(selectedCompany)}`;
+    companySelect.value = selectedId;
+    localStorage.setItem(SELECTED_COMPANY_KEY, selectedId);
+    selectedCompanyBadge.textContent = `Using selected company profile: ${selectedCompany.company_name}`;
+    selectedCompanyBadge.dataset.active = "true";
+    updateKnowledgeUseBadge(true);
+    const brain = selectedCompany.profile?.output || getSavedKnowledge();
+    if (brain) {
+      saveKnowledgeToLocalStorage(brain);
+      knowledgeOutput.value = brain;
+      profileBadge.textContent = "Saved";
+    } else {
+      knowledgeOutput.value = EMPTY_KNOWLEDGE_MESSAGE;
+      profileBadge.textContent = "Not built";
+    }
+  } else {
+    selectedCompanyBadge.textContent = "Please create or select a company profile first.";
+    selectedCompanyBadge.dataset.active = "false";
+    updateKnowledgeUseBadge(false);
+  }
+}
+
+function openCompanyForm(company = null) {
+  editingCompanyId = company?.id || "";
+  companyForm.hidden = false;
+  companyNameInput.value = company?.company_name || "";
+  companyIndustryInput.value = company?.industry || "";
+  companyWebsiteUrlsInput.value = (company?.website_urls || []).join("\n");
+  companyServicesInput.value = (company?.services || []).join("\n");
+  companyProductsInput.value = (company?.products || []).join("\n");
+  companyAudienceInput.value = (company?.target_audience || []).join("\n");
+  companyCompetitorsInput.value = Array.isArray(company?.competitors) ? company.competitors.join("\n") : "";
+  companyToneInput.value = company?.brand_tone || "";
+  companyNotesInput.value = company?.notes || "";
+  setStatus(companyStatus, editingCompanyId ? "Edit the selected company profile." : "Create a new company profile.", "neutral");
+}
+
+function closeCompanyForm() {
+  companyForm.hidden = true;
+  editingCompanyId = "";
+}
+
+async function saveCompanyProfile(event) {
+  event.preventDefault();
+  const payload = {
+    company_name: companyNameInput.value,
+    industry: companyIndustryInput.value,
+    website_urls: companyWebsiteUrlsInput.value,
+    services: companyServicesInput.value,
+    products: companyProductsInput.value,
+    target_audience: companyAudienceInput.value,
+    competitors: companyCompetitorsInput.value,
+    brand_tone: companyToneInput.value,
+    notes: companyNotesInput.value,
+  };
+  if (!payload.company_name.trim()) {
+    setStatus(companyStatus, "Company name is required.", "error");
+    return;
+  }
+  setLoading(saveCompanyButton, true, "Saving...", "Save Company Profile");
+  try {
+    const url = editingCompanyId ? `/api/companies/${encodeURIComponent(editingCompanyId)}` : "/api/companies";
+    const method = editingCompanyId ? "PATCH" : "POST";
+    const response = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Unable to save company.");
+    await loadCompanies();
+    selectCompany(data.company);
+    closeCompanyForm();
+    setStatus(companyStatus, "Company profile saved.", "success");
+  } catch (error) {
+    const localCompany = { ...createDefaultCompany(), ...parseCompanyPayloadLocally(payload), id: editingCompanyId || `local-${Date.now()}` };
+    companies = editingCompanyId ? companies.map((company) => (company.id === editingCompanyId ? localCompany : company)) : [localCompany, ...companies];
+    renderCompanySelect();
+    selectCompany(localCompany);
+    closeCompanyForm();
+    setStatus(companyStatus, `Saved locally, but database save failed: ${error.message}`, "error");
+  } finally {
+    setLoading(saveCompanyButton, false, "Saving...", "Save Company Profile");
+  }
+}
+
+async function deleteSelectedCompany() {
+  if (!selectedCompany) {
+    setStatus(companyStatus, "Please create or select a company profile first.", "error");
+    return;
+  }
+  if (selectedCompany.id && !String(selectedCompany.id).startsWith("local-")) {
+    try {
+      await deleteJson(`/api/companies/${encodeURIComponent(selectedCompany.id)}`);
+    } catch (error) {
+      setStatus(companyStatus, `Database delete failed: ${error.message}`, "error");
+    }
+  }
+  companies = companies.filter((company) => company !== selectedCompany && company.id !== selectedCompany.id);
+  renderCompanySelect();
+  setStatus(companyStatus, "Company profile deleted from this workspace.", "success");
+}
+
+function createDefaultCompany() {
+  return {
+    id: "local-cygnisoft",
+    company_name: "CygniSoft",
+    website_urls: ["https://cygnisoft.com"],
+    industry: "Staffing solutions and software solutions",
+    services: ["Healthcare staffing", "IT and technical hiring", "General staffing", "Custom software development", "Web app development", "AI automation"],
+    products: ["Resume parser", "Candidate registration system", "Healthcare staffing software", "Snow removal management system"],
+    target_audience: ["Clinics", "Healthcare agencies", "Small businesses", "Staffing agencies", "Recruitment agencies", "Snow removal companies"],
+    brand_tone: "Professional, clear, confident, friendly, simple, and not too salesy",
+    competitors: [],
+    notes: "Default example company profile.",
+    profile: { output: getSavedKnowledge() },
+  };
+}
+
+function parseCompanyPayloadLocally(payload) {
+  return {
+    company_name: payload.company_name,
+    industry: payload.industry,
+    website_urls: splitLines(payload.website_urls),
+    services: splitLines(payload.services),
+    products: splitLines(payload.products),
+    target_audience: splitLines(payload.target_audience),
+    competitors: splitLines(payload.competitors),
+    brand_tone: payload.brand_tone,
+    notes: payload.notes,
+    profile: {},
+  };
+}
+
+function splitLines(value) {
+  return String(value || "")
+    .split(/\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function init() {
   document.querySelector("#subtitle").textContent = COMPANY_DETAILS.subtitle;
   document.querySelector("#positioning").textContent = COMPANY_DETAILS.positioning;
   fillSelect(contentTypeSelect, CONTENT_TYPES);
   fillSelect(categorySelect, BUSINESS_CATEGORIES);
+  fillSelect(generateTargetAudience, TARGET_AUDIENCES);
+  fillSelect(generateCampaignGoal, CAMPAIGN_GOALS);
+  fillSelect(generateTone, CONTENT_TONES);
+  fillSelect(variationCount, VARIATION_COUNTS);
   fillSelect(marketIndustry, MARKET_INDUSTRIES);
   fillSelect(researchFocus, RESEARCH_FOCUS_OPTIONS);
   fillSelect(plannerService, PLANNER_SERVICES);
@@ -677,6 +997,19 @@ function init() {
   fillSelectWithAll(libraryBusinessCategory, BUSINESS_CATEGORIES, "All categories");
 
   setupTabs();
+
+  companySelect.addEventListener("change", () => {
+    const selected = companies.find((company, index) => (company.id || `local-${index}`) === companySelect.value);
+    selectCompany(selected || null);
+  });
+  createCompanyButton.addEventListener("click", () => openCompanyForm());
+  editCompanyButton.addEventListener("click", () => {
+    if (!requireSelectedCompany(companyStatus)) return;
+    openCompanyForm(selectedCompany);
+  });
+  deleteCompanyButton.addEventListener("click", deleteSelectedCompany);
+  companyForm.addEventListener("submit", saveCompanyProfile);
+  cancelCompanyButton.addEventListener("click", closeCompanyForm);
 
   form.addEventListener("submit", generateContent);
   resetButton.addEventListener("click", resetForm);
@@ -710,11 +1043,11 @@ function init() {
   resetForm();
   resetMarketForm();
   resetPlannerForm();
-  setStatus(knowledgeStatus, "Enter public CygniSoft URLs to build a reusable company profile.", "neutral");
+  setStatus(knowledgeStatus, "Enter public company URLs to build a reusable Company Business Brain.", "neutral");
   setStatus(reviewStatus, "Enter a page URL to get a focused content and SEO review.", "neutral");
   setStatus(competitorStatus, "Enter competitor URLs to compare positioning, CTAs, trust signals, and gaps.", "neutral");
   setStatus(libraryStatus, "Load saved generated content from Supabase.", "neutral");
-  loadSavedProfile();
+  loadCompanies();
 }
 
 init();

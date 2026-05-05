@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CygniSoft AI Marketing Agent V2</title>
+    <title>CygniSoft AI Agent</title>
     <link rel="stylesheet" href="./styles.css" />
     <script type="module" src="./app.js"></script>
   </head>
@@ -11,8 +11,8 @@
     <main class="app-shell">
       <section class="hero" aria-labelledby="appTitle">
         <div>
-          <p class="eyebrow">CygniSoft marketing workspace</p>
-          <h1 id="appTitle">CygniSoft AI Marketing Agent</h1>
+          <p class="eyebrow">Marketing workspace</p>
+          <h1 id="appTitle">CygniSoft AI Agent</h1>
           <p id="subtitle" class="subtitle"></p>
         </div>
         <div class="positioning" aria-label="Core positioning">
@@ -21,9 +21,74 @@
         </div>
       </section>
 
+      <section class="company-bar" aria-label="Company profile selector">
+        <div>
+          <p class="eyebrow">Company profile</p>
+          <div class="company-selector-row">
+            <select id="companySelect" aria-label="Select company profile"></select>
+            <button id="createCompanyButton" class="secondary-button" type="button">Create Company Profile</button>
+            <button id="editCompanyButton" class="secondary-button" type="button">Edit Company Profile</button>
+            <button id="deleteCompanyButton" class="danger-button" type="button">Delete Company Profile</button>
+          </div>
+          <span id="selectedCompanyBadge" class="knowledge-pill">Please create or select a company profile first.</span>
+        </div>
+        <form id="companyForm" class="company-form" hidden>
+          <div class="field-row">
+            <label for="companyNameInput">
+              <span>Company Name</span>
+              <input id="companyNameInput" type="text" placeholder="Example: CygniSoft" />
+            </label>
+            <label for="companyIndustryInput">
+              <span>Industry</span>
+              <input id="companyIndustryInput" type="text" placeholder="Example: Staffing and software" />
+            </label>
+          </div>
+          <label for="companyWebsiteUrlsInput" class="request-field">
+            <span>Website URLs</span>
+            <textarea id="companyWebsiteUrlsInput" rows="3" placeholder="One URL per line"></textarea>
+          </label>
+          <div class="field-row request-field">
+            <label for="companyServicesInput">
+              <span>Services</span>
+              <textarea id="companyServicesInput" rows="4" placeholder="One service per line"></textarea>
+            </label>
+            <label for="companyProductsInput">
+              <span>Products/Solutions</span>
+              <textarea id="companyProductsInput" rows="4" placeholder="One product or solution per line"></textarea>
+            </label>
+          </div>
+          <div class="field-row request-field">
+            <label for="companyAudienceInput">
+              <span>Target Audience</span>
+              <textarea id="companyAudienceInput" rows="4" placeholder="One audience per line"></textarea>
+            </label>
+            <label for="companyCompetitorsInput">
+              <span>Competitors</span>
+              <textarea id="companyCompetitorsInput" rows="4" placeholder="One competitor per line or URL"></textarea>
+            </label>
+          </div>
+          <label for="companyToneInput" class="request-field">
+            <span>Brand Tone</span>
+            <input id="companyToneInput" type="text" placeholder="Professional, clear, friendly, not too salesy" />
+          </label>
+          <label for="companyNotesInput" class="request-field">
+            <span>Notes</span>
+            <textarea id="companyNotesInput" rows="4"></textarea>
+          </label>
+          <div class="actions">
+            <button id="saveCompanyButton" class="primary-button" type="submit">
+              <span class="spinner" hidden></span>
+              <span class="button-text">Save Company Profile</span>
+            </button>
+            <button id="cancelCompanyButton" class="secondary-button" type="button">Cancel</button>
+          </div>
+          <p id="companyStatus" class="status" data-type="neutral" role="status"></p>
+        </form>
+      </section>
+
       <nav class="tabs" aria-label="Agent modes">
         <button class="tab-button" type="button" data-tab="generate">Generate Content</button>
-        <button class="tab-button" type="button" data-tab="knowledge">Build Company Knowledge</button>
+        <button class="tab-button" type="button" data-tab="knowledge">Build Company Profile</button>
         <button class="tab-button" type="button" data-tab="review">Website Review</button>
         <button class="tab-button" type="button" data-tab="competitor">Competitor Review</button>
         <button class="tab-button" type="button" data-tab="market">Market & Hiring Trends</button>
@@ -36,7 +101,7 @@
           <div class="panel-heading">
             <p class="eyebrow">Version 1 generator</p>
             <h2>Generate Marketing Content</h2>
-            <span id="knowledgeUseBadge" class="knowledge-pill">No saved company knowledge</span>
+            <span id="knowledgeUseBadge" class="knowledge-pill">Please create or select a company profile first.</span>
           </div>
 
           <div class="field-row">
@@ -48,6 +113,52 @@
             <label for="category">
               <span>Business Category</span>
               <select id="category" name="category"></select>
+            </label>
+          </div>
+
+          <div class="field-row">
+            <label for="generateTargetAudience">
+              <span>Target Audience</span>
+              <select id="generateTargetAudience" name="targetAudience"></select>
+            </label>
+
+            <label for="generateRegion">
+              <span>Region</span>
+              <input id="generateRegion" name="region" type="text" placeholder="Example: Ontario, GTA, Toronto" />
+            </label>
+          </div>
+
+          <div class="field-row">
+            <label for="generateCampaignGoal">
+              <span>Campaign Goal</span>
+              <select id="generateCampaignGoal" name="campaignGoal"></select>
+            </label>
+
+            <label for="generateTone">
+              <span>Tone</span>
+              <select id="generateTone" name="tone"></select>
+            </label>
+          </div>
+
+          <div class="field-row">
+            <label for="variationCount">
+              <span>Number of Variations</span>
+              <select id="variationCount" name="variationCount"></select>
+            </label>
+          </div>
+
+          <div class="option-grid" aria-label="Generation options">
+            <label class="check-option" for="marketAwareMode">
+              <input id="marketAwareMode" name="marketAwareMode" type="checkbox" checked />
+              <span>Market-Aware Mode</span>
+            </label>
+            <label class="check-option" for="suggestBestService">
+              <input id="suggestBestService" name="suggestBestService" type="checkbox" checked />
+              <span>Suggest Best Service</span>
+            </label>
+            <label class="check-option" for="useLiveSearch">
+              <input id="useLiveSearch" name="useLiveSearch" type="checkbox" />
+              <span>Use live web/search trends</span>
             </label>
           </div>
 
@@ -70,6 +181,7 @@
           </div>
 
           <p id="statusMessage" class="status" data-type="neutral" role="status"></p>
+          <p id="searchNote" class="status" data-type="neutral"></p>
         </form>
 
         <section class="output-panel" aria-labelledby="outputTitle">
@@ -79,6 +191,16 @@
               <h2 id="outputTitle">Generated Marketing Content</h2>
             </div>
             <span id="sourceBadge" class="badge">Ready</span>
+          </div>
+
+          <div id="recommendationPanel" class="score-panel" hidden>
+            <p class="eyebrow">Promotion opportunity scoring</p>
+            <pre id="recommendationOutput"></pre>
+          </div>
+
+          <div id="qualityPanel" class="score-panel" hidden>
+            <p class="eyebrow">Content quality score</p>
+            <pre id="qualityOutput"></pre>
           </div>
 
           <textarea
@@ -98,8 +220,8 @@
       <section id="knowledge" class="tab-panel tool-layout" aria-label="Website knowledge builder">
         <form id="knowledgeForm" class="generator-panel">
           <div class="panel-heading">
-            <p class="eyebrow">Website Knowledge Builder</p>
-            <h2>Build Company Knowledge</h2>
+            <p class="eyebrow">Company Business Brain</p>
+            <h2>Build Company Profile</h2>
           </div>
 
           <label for="knowledgeUrls">
@@ -107,7 +229,7 @@
             <textarea
               id="knowledgeUrls"
               rows="10"
-              placeholder="Enter one CygniSoft URL per line, such as home, about, staffing, healthcare, cybersecurity, ERP, careers, and contact pages."
+              placeholder="Enter one company URL per line, such as home, about, services, careers, and contact pages."
             ></textarea>
           </label>
 
@@ -124,7 +246,7 @@
           <div class="output-header">
             <div>
               <p class="eyebrow">Saved profile</p>
-              <h2>Generated Company Knowledge Profile</h2>
+              <h2>Generated Company Business Brain</h2>
             </div>
             <span id="profileBadge" class="badge">Not built</span>
           </div>
@@ -143,7 +265,7 @@
         <form id="reviewForm" class="generator-panel">
           <div class="panel-heading">
             <p class="eyebrow">Website Review</p>
-            <h2>Review a CygniSoft Page</h2>
+            <h2>Review a Company Page</h2>
           </div>
 
           <label for="reviewUrl">
@@ -183,7 +305,7 @@
           </div>
 
           <label for="cygnisoftCompareUrls">
-            <span>CygniSoft URLs</span>
+            <span>Company URLs</span>
             <textarea id="cygnisoftCompareUrls" rows="6" placeholder="Optional if you already built a company profile. One URL per line."></textarea>
           </label>
 
@@ -221,7 +343,7 @@
           <div class="panel-heading">
             <p class="eyebrow">Version 4</p>
             <h2>Market & Hiring Trends</h2>
-            <span id="marketKnowledgeBadge" class="knowledge-pill">No saved company knowledge</span>
+            <span id="marketKnowledgeBadge" class="knowledge-pill">Please create or select a company profile first.</span>
           </div>
 
           <div class="field-row">
@@ -276,7 +398,7 @@
           <div class="panel-heading">
             <p class="eyebrow">Version 5</p>
             <h2>Lead & Campaign Planner</h2>
-            <span id="plannerKnowledgeBadge" class="knowledge-pill">No saved company knowledge</span>
+            <span id="plannerKnowledgeBadge" class="knowledge-pill">Please create or select a company profile first.</span>
           </div>
 
           <div class="field-row">

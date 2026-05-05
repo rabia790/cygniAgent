@@ -24,6 +24,47 @@ function getSupabaseMissingMessage() {
   return "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to enable database storage.";
 }
 
+const defaultCompanyProfile = {
+  company_name: "CygniSoft",
+  website_urls: ["https://cygnisoft.com"],
+  industry: "Staffing solutions and software solutions",
+  services: ["Healthcare staffing", "IT and technical hiring", "General staffing", "Custom software development", "Web app development", "AI automation"],
+  products: ["Resume parser", "Candidate registration system", "Healthcare staffing software", "Snow removal management system"],
+  target_audience: ["Clinics", "Healthcare agencies", "Small businesses", "Staffing agencies", "Recruitment agencies", "Snow removal companies"],
+  brand_tone: "Professional, clear, confident, friendly, simple, and not too salesy",
+  competitors: [],
+  notes: "Default example company profile for CygniSoft AI Agent.",
+  profile: {
+    output: `Company Overview
+CygniSoft is both a staffing solutions and software solutions company.
+
+Services Found
+- Healthcare staffing
+- IT and technical hiring
+- General staffing
+- Custom software development
+- Web app development
+- AI automation
+
+Products/Solutions Found
+- Resume parser
+- Candidate registration system
+- Healthcare staffing software
+- Snow removal management system
+
+Target Clients
+- Clinics
+- Healthcare agencies
+- Small businesses
+- Staffing agencies
+- Recruitment agencies
+- Snow removal companies
+
+Brand Tone
+Professional, clear, confident, friendly, simple, and not too salesy`
+  },
+};
+
 const companyDetails = {
   name: "CygniSoft",
   positioning: "CygniSoft helps businesses grow with the right people and the right software.",
@@ -219,37 +260,36 @@ const contentTypeFormats = {
   "LinkedIn Post": `Generate only a natural LinkedIn post.
 Write it as final post copy only.
 Requirements:
-- Start with a strong opening hook.
-- Use short paragraphs with natural LinkedIn pacing.
-- Mention the selected business category clearly.
-- Focus on the client problem first.
-- Explain how CygniSoft helps.
-- Include exactly 3 practical benefits, either in a short sentence or bullets.
-- End with a clear CTA.
-- Do not show labels such as "Hook", "Business value", or "CTA" unless the user asks for structured output.
-- Make it ready to copy and post directly.`,
+- Strong opening hook.
+- Short paragraphs.
+- Clear client problem and practical value.
+- Soft CTA.
+- 3 to 5 relevant hashtags.
+- No labels such as "Hook" or "CTA" unless the user asks for structure.`,
   "Cold Email": `Generate a cold email.
 Format:
 Subject Line
 Email Body
 CTA
+Follow-Up Email
 Keep it concise, specific, polite, and easy to reply to. Include placeholders like [First Name] only where useful.`,
   "Website Copy": `Generate website copy.
 Format:
 Hero Headline
-Hero Subheading
-Service Section
+Subheading
 Benefits
+Page Sections
 CTA
+SEO Title
+Meta Description
 Make it suitable for a service landing page and specific to the selected category.`,
   "Service Page Content": `Generate service page content.
 Format:
-Page Headline
-Intro Copy
-Who It Helps
-Common Challenges
-How CygniSoft Helps
-Key Benefits
+SEO Title
+H1
+Service Overview
+Benefits
+FAQs
 CTA
 Keep it clear for business owners and avoid technical clutter.`,
   "Product Description": `Generate a product description.
@@ -265,26 +305,26 @@ Make the product feel practical and specific without inventing unproven claims.`
 Format:
 Objective
 Scope
-Recommended Solution
-Benefits
+Solution
+Deliverables
 Timeline Placeholder
 Next Steps
 Use placeholders where client-specific details are needed.`,
   "Campaign Idea": `Generate a campaign idea.
 Format:
-Campaign Theme
-Target Audience
-Core Message
-Content Angles
-Suggested Channels
-CTA
-Make the campaign practical and easy for CygniSoft to execute.`,
+Campaign Goal
+Audience
+Message
+Channels
+Content Ideas
+Metrics
+Make the campaign practical and easy to execute.`,
   "Social Media Calendar": `Generate a 7-day content calendar.
 Format:
 Day 1 through Day 7
 Each day must include:
 Post Topic
-Caption Idea
+Caption
 CTA
 Vary the angles across problem, education, service value, and outreach.`,
 };
@@ -309,32 +349,275 @@ function readBody(req) {
   });
 }
 
-function buildPrompt({ contentType, category, userRequest }, companyProfile = null) {
-  const guide = categoryGuidance[category] || categoryGuidance["Staffing Services"];
-  const format = contentTypeFormats[contentType] || contentTypeFormats["LinkedIn Post"];
+function getSelectedCompanyName(companyProfile = null) {
+  return companyProfile?.companyName || companyProfile?.company_name || companyProfile?.companyOverview?.match(/^([A-Z][\w&.\s-]{1,60})\s+is\b/)?.[1]?.trim() || "the selected company";
+}
+
+function localizeCompanyName(value, companyName) {
+  if (typeof value === "string") return value.replaceAll("CygniSoft", companyName);
+  if (Array.isArray(value)) return value.map((item) => localizeCompanyName(item, companyName));
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, localizeCompanyName(item, companyName)]));
+  }
+  return value;
+}
+
+function formatRecommendationForPrompt(recommendation) {
+  return [
+    `Promotion Match Score: ${recommendation.promotionMatchScore}/100`,
+    `Recommended service/product: ${recommendation.recommendedService}`,
+    `Best marketing angle: ${recommendation.bestMarketingAngle}`,
+    `Target audience: ${recommendation.targetAudience}`,
+    `Main pain point: ${recommendation.mainPainPoint}`,
+    `Recommended CTA: ${recommendation.recommendedCta}`,
+    `Reasoning: ${recommendation.reasoning}`,
+  ].join("\n");
+}
+
+function getLiveSearchConfig() {
+  return {
+    configured: Boolean(process.env.TAVILY_API_KEY),
+    provider: process.env.TAVILY_API_KEY ? "Tavily" : "",
+    note: process.env.TAVILY_API_KEY
+      ? "Live search provider configured: Tavily."
+      : "Live search is not configured. Using saved company profile and available market trend data.",
+  };
+}
+
+async function runLiveTrendSearch(payload, companyProfile = null) {
+  const config = getLiveSearchConfig();
+  if (!payload.useLiveSearch) {
+    return { ...config, used: false, results: [], context: "", note: "" };
+  }
+  if (!config.configured) {
+    return { ...config, used: false, results: [], context: "", note: config.note };
+  }
+
+  const query = buildLiveSearchQuery(payload, companyProfile);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+  try {
+    const response = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.TAVILY_API_KEY}`,
+      },
+      body: JSON.stringify({
+        query,
+        search_depth: "basic",
+        topic: "general",
+        time_range: "month",
+        max_results: 5,
+        include_answer: false,
+        include_raw_content: false,
+        include_images: false,
+        country: inferSearchCountry(payload.region),
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Tavily search failed: ${response.status} ${errorText}`);
+    }
+    const data = await response.json();
+    const results = (data.results || []).slice(0, 5).map((item) => ({
+      title: cleanText(item.title || ""),
+      url: item.url || "",
+      content: cleanText(item.content || "").slice(0, 700),
+      score: typeof item.score === "number" ? item.score : null,
+    }));
+    return {
+      ...config,
+      used: true,
+      query,
+      results,
+      context: formatLiveSearchContext(results),
+      note: results.length
+        ? `Live search used Tavily for current web context. Review sources before citing exact claims.`
+        : `Tavily returned no useful results. Using saved company profile and available market trend data.`,
+    };
+  } catch (error) {
+    clearTimeout(timeout);
+    return {
+      ...config,
+      used: false,
+      query,
+      results: [],
+      context: "",
+      note: `Live search failed: ${error.message}. Using saved company profile and available market trend data.`,
+    };
+  }
+}
+
+function buildLiveSearchQuery(payload, companyProfile = null) {
+  return [
+    payload.region,
+    payload.targetAudience,
+    payload.category,
+    payload.campaignGoal,
+    getSelectedCompanyName(companyProfile),
+    "current market demand hiring trends software automation needs marketing opportunities",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function inferSearchCountry(region = "") {
+  const value = String(region).toLowerCase();
+  if (/canada|ontario|toronto|gta|mississauga|brampton/.test(value)) return "canada";
+  if (/united states|usa|u\.s\.|new york|california|texas|florida/.test(value)) return "united states";
+  return undefined;
+}
+
+function formatLiveSearchContext(results = []) {
+  if (!results.length) return "";
+  return results
+    .map((item, index) => [`Source ${index + 1}: ${item.title}`, `URL: ${item.url}`, `Snippet: ${item.content}`].join("\n"))
+    .join("\n\n");
+}
+
+function collectProfileItems(companyProfile = null) {
+  return [
+    ...(companyProfile?.staffingServices || []),
+    ...(companyProfile?.softwareItServices || []),
+    ...(companyProfile?.healthcareServices || []),
+    ...(companyProfile?.technologyServices || []),
+    ...(companyProfile?.seoKeywords || []),
+  ].filter(Boolean);
+}
+
+function scorePromotionOpportunity(payload, companyProfile, savedContext = {}) {
+  const companyName = getSelectedCompanyName(companyProfile);
+  const guide = localizeCompanyName(categoryGuidance[payload.category] || categoryGuidance["Staffing Services"], companyName);
+  const profileItems = collectProfileItems(companyProfile);
+  const request = String(payload.userRequest || "").toLowerCase();
+  const targetAudience = payload.targetAudience || guide.audience;
+  const recommendedService = payload.suggestBestService
+    ? chooseRecommendedService(payload, profileItems, guide)
+    : payload.category;
+  let score = 55;
+  if (companyProfile) score += 12;
+  if (payload.targetAudience) score += 8;
+  if (payload.region) score += 5;
+  if (payload.campaignGoal) score += 5;
+  if (profileItems.some((item) => request.includes(String(item).toLowerCase()))) score += 6;
+  if (savedContext.savedMarketAvailable || savedContext.marketContext) score += 6;
+  if (savedContext.savedCompetitorAvailable || savedContext.competitorContext) score += 3;
+  if (savedContext.liveSearchAvailable) score += 5;
+  if (payload.marketAwareMode) score += 3;
+  score = Math.max(35, Math.min(96, score));
+
+  return {
+    label: "AI-assisted recommendation",
+    promotionMatchScore: score,
+    recommendedService,
+    bestMarketingAngle: buildMarketingAngle(payload, guide, recommendedService),
+    targetAudience,
+    mainPainPoint: guide.problem,
+    recommendedCta: buildRecommendedCta(payload, guide),
+    reasoning: [
+      "AI-assisted recommendation based on selected company profile, selected category, target audience, campaign goal, user request, and available saved context.",
+      savedContext.savedMarketAvailable || savedContext.marketContext ? "Saved market trend data was considered." : "No saved market trend data was found for this company.",
+      savedContext.savedCompetitorAvailable || savedContext.competitorContext ? "Saved competitor review data was considered." : "No saved competitor review data was found for this company.",
+      savedContext.liveSearchAvailable ? "Live Tavily search results were considered; verify source details before citing exact claims." : "No live search results were used.",
+    ].join(" "),
+  };
+}
+
+function chooseRecommendedService(payload, profileItems, guide) {
+  const request = String(payload.userRequest || "").toLowerCase();
+  const matchingProfileItem = profileItems.find((item) => request.includes(String(item).toLowerCase()));
+  if (matchingProfileItem) return matchingProfileItem;
+  return guide.details?.[0] || payload.category;
+}
+
+function buildMarketingAngle(payload, guide, service) {
+  const goal = payload.campaignGoal ? ` The campaign should support ${String(payload.campaignGoal).toLowerCase()}.` : "";
+  return `Position ${service} as a practical way to address this problem: ${guide.problem}${goal}`;
+}
+
+function buildRecommendedCta(payload, guide) {
+  if (/email/i.test(payload.campaignGoal || "")) return "Reply with one current challenge, and we can suggest a practical next step.";
+  if (/demo|product/i.test(payload.campaignGoal || "")) return "Book a short demo or discovery call to see if this fits your workflow.";
+  if (/brand/i.test(payload.campaignGoal || "")) return "Follow or connect for practical ideas related to this challenge.";
+  return guide.cta;
+}
+
+function scoreGeneratedContent(content, payload, companyProfile, recommendation) {
+  const text = String(content || "");
+  const hasCta = /(contact|book|reply|message|schedule|connect|call|demo|consultation|learn more)/i.test(text);
+  const hasAudience = text.toLowerCase().includes(String(payload.targetAudience || "").toLowerCase().split(" ")[0] || "");
+  const hasCompany = text.includes(getSelectedCompanyName(companyProfile));
+  const hasSpecifics = text.includes(recommendation.recommendedService) || text.includes(payload.category);
+  const clarity = Math.min(95, 68 + (text.length > 300 ? 10 : 0) + (text.split("\n").length > 4 ? 8 : 0));
+  const audienceFit = Math.min(95, 62 + (hasAudience ? 18 : 0) + (hasSpecifics ? 10 : 0));
+  const ctaStrength = Math.min(95, 58 + (hasCta ? 25 : 0) + (/would you|book|reply|contact/i.test(text) ? 8 : 0));
+  const brandFit = Math.min(95, 64 + (hasCompany ? 10 : 0) + (/guarantee|best in|#1/i.test(text) ? -18 : 10));
+  const overall = Math.round((clarity + audienceFit + ctaStrength + brandFit) / 4);
+  const improvementSuggestions = [];
+  if (!hasAudience) improvementSuggestions.push("Mention the selected target audience more directly.");
+  if (!hasCta) improvementSuggestions.push("Add a clearer next step or CTA.");
+  if (!hasSpecifics) improvementSuggestions.push("Reference the recommended service/product more specifically.");
+  if (text.length < 250) improvementSuggestions.push("Add one or two concrete business benefits.");
+  if (!improvementSuggestions.length) improvementSuggestions.push("Content is ready to use; only minor editing may be needed for client-specific details.");
+  return { overall, clarity, audienceFit, ctaStrength, brandFit, improvementSuggestions };
+}
+
+function applyVariationWrapper(content, variationCount, contentType) {
+  const count = Math.max(1, Math.min(3, Number(variationCount || 1)));
+  if (count === 1 || /Variation 2/i.test(content)) return content;
+  return Array.from({ length: count }, (_, index) => {
+    if (index === 0) return `Variation 1\n${content}`;
+    const angle =
+      index === 1
+        ? "Alternate angle: emphasize time savings, clearer decisions, and reduced manual coordination."
+        : "Alternate angle: emphasize audience pain points, trust-building education, and a softer consultation CTA.";
+    return `Variation ${index + 1}\n${angle}\n\n${content}`;
+  }).join("\n\n---\n\n");
+}
+
+function buildPrompt(payload, companyProfile = null, generationContext = {}) {
+  const { contentType, category, userRequest } = payload;
+  const recommendation = generationContext.recommendation;
+  const marketContext = generationContext.marketContext || "";
+  const companyName = getSelectedCompanyName(companyProfile);
+  const guide = localizeCompanyName(categoryGuidance[category] || categoryGuidance["Staffing Services"], companyName);
+  const format = localizeCompanyName(contentTypeFormats[contentType] || contentTypeFormats["LinkedIn Post"], companyName);
   const profileText = formatKnowledgeProfileForPrompt(companyProfile);
 
-  return `You are the AI Marketing Agent for CygniSoft.
+  return `You are the marketing agent inside CygniSoft AI Agent.
 
-CygniSoft is both a staffing solutions and software solutions company.
-Core message: ${companyDetails.positioning}
+The product is named CygniSoft AI Agent, but the content must be written for the currently selected company profile.
+Selected company: ${companyName}
+Core message: Use the selected company profile as the source of truth.
 
 Create marketing content based on:
 Content Type: ${contentType}
 Business Category: ${category}
 User Request: ${userRequest}
+Target Audience: ${payload.targetAudience || "Not specified"}
+Region: ${payload.region || "Not specified"}
+Campaign Goal: ${payload.campaignGoal || "Not specified"}
+Tone: ${payload.tone || "Professional, clear, and practical"}
+Number of Variations: ${payload.variationCount || 1}
+Market-Aware Mode: ${payload.marketAwareMode ? "On" : "Off"}
+Suggest Best Service: ${payload.suggestBestService ? "On" : "Off"}
 
-Company details:
-Staffing includes healthcare staffing, IT and technical hiring, general staffing, candidate sourcing, and recruitment support.
-Software includes websites, web apps, dashboards, portals, automation, AI tools, resume parser, healthcare staffing software, snow removal management system, and custom software projects.
+Promotion opportunity recommendation:
+${recommendation ? formatRecommendationForPrompt(recommendation) : "AI-assisted recommendation was not available."}
 
-Latest CygniSoft website knowledge profile:
+Available market and competitor context:
+${marketContext || "No saved market trend or competitor review context was available."}
+
+Selected company profile:
 ${profileText}
 
 Selected category guidance:
 Audience: ${guide.audience}
 Typical problem: ${guide.problem}
-CygniSoft solution: ${guide.solution}
+How ${companyName} helps: ${guide.solution}
 Useful details to reference when relevant: ${guide.details.join(", ")}
 Benefits to adapt naturally: ${guide.benefits.join(", ")}
 
@@ -345,6 +628,8 @@ Do not overpromise.
 Do not make fake claims.
 Do not invent clients, case studies, locations, guarantees, certifications, or statistics.
 If the knowledge profile does not contain a detail, do not pretend it does.
+Do not say something is trending unless it comes from saved trend data or live search results included above.
+If the recommendation is based on assumptions, label the strategic basis as "AI-assisted recommendation".
 Keep the language simple.
 Focus on the client's problem, solution, and business benefit.
 Make the output ready to use.
@@ -355,11 +640,14 @@ Do not use heavy technical jargon.
 Do not mention being an AI.
 
 Required output format for ${contentType}:
-${format}`;
+${format}
+
+If Number of Variations is greater than 1, create clearly separated variations labeled Variation 1, Variation 2, and Variation 3 as needed.`;
 }
 
 function buildFallbackContent({ contentType, category, userRequest }, companyProfile = null) {
-  const guide = categoryGuidance[category] || categoryGuidance["Staffing Services"];
+  const companyName = getSelectedCompanyName(companyProfile);
+  const guide = localizeCompanyName(categoryGuidance[category] || categoryGuidance["Staffing Services"], companyName);
   const categoryPhrase = categorySentencePhrases[category] || category.toLowerCase();
   const benefits = guide.benefits.map((benefit) => `- ${benefit}`).join("\n");
   const detailList = guide.details.map((detail) => `- ${detail}`).join("\n");
@@ -376,7 +664,7 @@ function buildFallbackContent({ contentType, category, userRequest }, companyPro
 
 ${guide.problem} That can lead to delayed decisions, more admin work, and less time for the work clients or patients actually depend on.
 
-CygniSoft helps businesses grow with the right people and the right software. For ${categoryPhrase}, CygniSoft helps with focused staffing support, custom software, or both depending on what the business needs.${linkedinRequestContext}
+CygniSoft helps clients address this with services shaped around the selected business need. For ${categoryPhrase}, CygniSoft focuses on the practical support, systems, or service path that fits the situation.${linkedinRequestContext}
 ${profileContext}
 
 The goal is simple:
@@ -392,7 +680,7 @@ Hi [First Name],
 
 I am reaching out because ${categoryPhrase} can become difficult to manage when teams are already busy. ${guide.problem}
 
-CygniSoft helps businesses grow with the right people and the right software. ${guide.solution}${requestContext}
+CygniSoft helps clients address the problem with clear, practical support. ${guide.solution}${requestContext}
 ${profileContext}
 
 CTA
@@ -402,7 +690,7 @@ Would you be open to a short conversation next week to see if this could help [C
 ${category} for Businesses That Need Clearer Operations
 
 Hero Subheading
-${companyDetails.positioning}
+Practical support for teams that need clearer service delivery, better workflows, or more organized growth.
 
 Service Overview
 ${guide.problem} ${guide.solution}
@@ -520,7 +808,7 @@ ${guide.cta}`,
     "Social Media Calendar": buildCalendar(category, guide, userRequest),
   };
 
-  return templates[contentType] || templates["LinkedIn Post"];
+  return localizeCompanyName(templates[contentType] || templates["LinkedIn Post"], companyName);
 }
 
 function buildCalendar(category, guide, userRequest) {
@@ -606,7 +894,7 @@ function cleanUserNeed(value) {
 
 function formatKnowledgeProfileForPrompt(profile) {
   if (!profile) {
-    return "No website knowledge profile has been built yet. Use only the default CygniSoft context and clearly avoid unsupported details.";
+    return "No company profile has been built yet. Use only the selected request context and clearly avoid unsupported details.";
   }
 
   return [
@@ -649,11 +937,12 @@ function getProfileCopyContext(profile) {
     .join("; ")}.`;
 }
 
-async function generateWithOpenAI(payload, companyProfile = null) {
+async function generateWithOpenAI(payload, companyProfile = null, generationContext = {}) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
 
   const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
+  const companyName = getSelectedCompanyName(companyProfile);
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -666,9 +955,9 @@ async function generateWithOpenAI(payload, companyProfile = null) {
         {
           role: "system",
           content:
-            "You write ready-to-use marketing content for CygniSoft. Follow the requested content format exactly, make every answer specific to the selected business category, use simple business language, avoid fake claims, and never overpromise.",
+            `You write ready-to-use marketing content for ${companyName} inside the CygniSoft AI Agent product. Follow the requested content format exactly, make every answer specific to the selected business category, use simple business language, avoid fake claims, and never overpromise.`,
         },
-        { role: "user", content: buildPrompt(payload, companyProfile) },
+        { role: "user", content: buildPrompt(payload, companyProfile, generationContext) },
       ],
       temperature: 0.7,
     }),
@@ -722,11 +1011,12 @@ async function generateAnalysisWithOpenAI({ task, context, format }) {
 
 async function handleBuildKnowledge(req, res) {
   try {
-    const { urls } = JSON.parse((await readBody(req)) || "{}");
+    const payload = JSON.parse((await readBody(req)) || "{}");
+    const { urls, selectedCompany, companyId } = payload;
     const urlList = parseUrlList(urls);
 
     if (!urlList.length) {
-      sendJson(res, 400, { error: "Please enter at least one CygniSoft website URL." });
+      sendJson(res, 400, { error: "Please enter at least one company website URL." });
       return;
     }
 
@@ -756,10 +1046,17 @@ async function handleBuildKnowledge(req, res) {
 
     profile.output = formatCompanyKnowledgeProfile(profile);
     const saveResult = await saveCompanyKnowledge({
-      companyName: "CygniSoft",
+      companyName: selectedCompany?.company_name || "Company",
       websiteUrls: successfulPages.map((page) => page.url),
       profile,
+      companyId: companyId || selectedCompany?.id || null,
     });
+    if ((companyId || selectedCompany?.id) && !saveResult.error) {
+      await updateCompany(companyId || selectedCompany.id, {
+        website_urls: selectedCompany?.website_urls?.length ? selectedCompany.website_urls : successfulPages.map((page) => page.url),
+        profile,
+      });
+    }
     sendJson(res, 200, {
       profile,
       output: profile.output,
@@ -792,7 +1089,7 @@ async function handleGetCompanyProfile(_req, res) {
 
 async function handleUpdateCompanyProfile(req, res) {
   try {
-    const { output, id } = JSON.parse((await readBody(req)) || "{}");
+    const { output, id, companyId, selectedCompany } = JSON.parse((await readBody(req)) || "{}");
     const profileText = String(output || "").trim();
     if (!profileText || profileText === "No company knowledge profile has been built yet.") {
       sendJson(res, 400, { error: "Please enter company profile content before saving." });
@@ -805,14 +1102,34 @@ async function handleUpdateCompanyProfile(req, res) {
       output: profileText,
       updatedAt: new Date().toISOString(),
     };
-    const latest = id ? { data: { id } } : await getLatestCompanyKnowledge();
+    const targetCompanyId = companyId || selectedCompany?.id || null;
+    const latest = id
+      ? { data: { id } }
+      : targetCompanyId
+        ? await getLatestCompanyKnowledge(targetCompanyId)
+        : await getLatestCompanyKnowledge();
     const result = latest.data?.id
-      ? await updateCompanyKnowledge({ id: latest.data.id, profile })
-      : await saveCompanyKnowledge({ profile });
+      ? await updateCompanyKnowledge({
+          id: latest.data.id,
+          companyName: selectedCompany?.company_name || "Company",
+          websiteUrls: selectedCompany?.website_urls || [],
+          profile,
+          companyId: targetCompanyId,
+        })
+      : await saveCompanyKnowledge({
+          companyName: selectedCompany?.company_name || "Company",
+          websiteUrls: selectedCompany?.website_urls || [],
+          profile,
+          companyId: targetCompanyId,
+        });
 
     if (result.error) {
       sendJson(res, result.configured ? 500 : 503, { error: result.error, supabaseConfigured: result.configured });
       return;
+    }
+
+    if (targetCompanyId) {
+      await updateCompany(targetCompanyId, { profile });
     }
 
     sendJson(res, 200, { profile, output: profile.output, saved: true, supabaseConfigured: result.configured });
@@ -822,12 +1139,17 @@ async function handleUpdateCompanyProfile(req, res) {
   }
 }
 
-async function handleClearCompanyProfile(_req, res) {
+async function handleClearCompanyProfile(req, res) {
   try {
-    const result = await clearCompanyKnowledge();
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const companyId = url.searchParams.get("companyId") || "";
+    const result = await clearCompanyKnowledge(companyId);
     if (result.error) {
       sendJson(res, result.configured ? 500 : 503, { error: result.error, supabaseConfigured: result.configured });
       return;
+    }
+    if (companyId) {
+      await updateCompany(companyId, { profile: {} });
     }
     sendJson(res, 200, { profile: null, output: "No company knowledge profile has been built yet.", supabaseConfigured: true });
   } catch (error) {
@@ -855,14 +1177,15 @@ async function handleWebsiteReview(req, res) {
     }
 
     const aiReview = await generateAnalysisWithOpenAI({
-      task: "Review this CygniSoft website page for marketing clarity, content quality, CTAs, and SEO.",
-      context: `${companyProfile ? `Saved CygniSoft knowledge profile:\n${formatKnowledgeProfileForPrompt(companyProfile)}\n\n` : ""}${formatPagesForPrompt([page])}`,
+      task: "Review this selected company website page for marketing clarity, content quality, CTAs, and SEO.",
+      context: `${companyProfile ? `Selected company profile:\n${formatKnowledgeProfileForPrompt(companyProfile)}\n\n` : ""}${formatPagesForPrompt([page])}`,
       format: websiteReviewFormat,
     });
     const output = aiReview || formatWebsiteReview(page, extractKnowledgeFromPages([page]));
     const saveResult = await saveWebsiteReview({
       website_url: page.url,
-      business_focus: companyProfile ? "Saved CygniSoft knowledge" : "Default CygniSoft context",
+      company_id: payload.companyId || payload.selectedCompany?.id || null,
+      business_focus: companyProfile ? "Selected company profile" : "General company context",
       review_output: output,
     });
     sendJson(res, 200, {
@@ -890,7 +1213,7 @@ async function handleCompetitorReview(req, res) {
     if (!cygniUrls.length && !companyProfile) {
       sendJson(res, 400, {
         error:
-          "Please enter at least one CygniSoft URL or build the company knowledge profile before running competitor review.",
+          "Please enter at least one company URL or build the company profile before running competitor review.",
       });
       return;
     }
@@ -914,8 +1237,8 @@ async function handleCompetitorReview(req, res) {
     }
 
     const context = [
-      companyProfile ? `Existing CygniSoft knowledge profile:\n${formatKnowledgeProfileForPrompt(companyProfile)}` : "",
-      goodCygniPages.length ? `CygniSoft pages:\n${formatPagesForPrompt(goodCygniPages)}` : "",
+      companyProfile ? `Selected company profile:\n${formatKnowledgeProfileForPrompt(companyProfile)}` : "",
+      goodCygniPages.length ? `Selected company pages:\n${formatPagesForPrompt(goodCygniPages)}` : "",
       `Competitor pages:\n${formatPagesForPrompt(goodCompetitorPages)}`,
     ]
       .filter(Boolean)
@@ -923,15 +1246,16 @@ async function handleCompetitorReview(req, res) {
 
     const aiReview = await generateAnalysisWithOpenAI({
       task:
-        "Compare CygniSoft with the competitor website pages. Use only the provided text and clearly identify missing information instead of inventing it.",
+        "Compare the selected company with the competitor website pages. Use only the provided text and clearly identify missing information instead of inventing it.",
       context,
       format: competitorReviewFormat,
     });
     const output = aiReview || formatCompetitorReview(goodCygniPages, goodCompetitorPages, companyProfile);
     const saveResult = await saveCompetitorReview({
       company_url: cygniUrls[0] || "",
+      company_id: payload.companyId || payload.selectedCompany?.id || null,
       competitor_urls: compUrls,
-      business_focus: companyProfile ? "Saved CygniSoft knowledge" : "Fetched CygniSoft URLs",
+      business_focus: companyProfile ? "Selected company profile" : "Fetched company URLs",
       review_output: output,
     });
     sendJson(res, 200, {
@@ -972,6 +1296,7 @@ async function handleMarketTrends(req, res) {
 
     const cleanPayload = {
       industry,
+      company_id: payload.companyId || payload.selectedCompany?.id || null,
       region: String(region).trim(),
       researchFocus,
       notes: String(notes || "").trim(),
@@ -979,7 +1304,7 @@ async function handleMarketTrends(req, res) {
 
     const aiOutput = await generateAnalysisWithOpenAI({
       task:
-        "Create Version 4 market and hiring trend research for CygniSoft. No live web search is available unless sources are explicitly provided. Use the saved company profile when present, avoid exact live claims, and keep the output practical for staffing and software marketing decisions.",
+        "Create Version 4 market and hiring trend research for the selected company. No live web search is available unless sources are explicitly provided. Use the selected company profile when present, avoid exact live claims, and keep the output practical for marketing decisions.",
       context: buildMarketResearchPromptContext(cleanPayload, companyProfile),
       format: marketResearchFormat,
     });
@@ -1047,13 +1372,14 @@ async function handleLeadCampaignPlan(req, res) {
 
     const aiOutput = await generateAnalysisWithOpenAI({
       task:
-        "Create Version 5 lead generation and campaign planning output for CygniSoft. Do not scrape personal data, do not create private contact lists, do not promise guaranteed leads or sales, and keep outreach professional with personalization placeholders.",
+        "Create Version 5 lead generation and campaign planning output for the selected company. Do not scrape personal data, do not create private contact lists, do not promise guaranteed leads or sales, and keep outreach professional with personalization placeholders.",
       context: buildLeadPlannerPromptContext(cleanPayload, companyProfile),
       format: leadPlannerFormat,
     });
     const output = aiOutput || buildLeadPlannerFallback(cleanPayload, companyProfile);
     const saveResult = await saveCampaignPlan({
       service_product: service,
+      company_id: payload.companyId || payload.selectedCompany?.id || null,
       target_audience: targetAudience,
       region: cleanPayload.region,
       campaign_goal: campaignGoal,
@@ -1078,7 +1404,22 @@ async function handleLeadCampaignPlan(req, res) {
 async function handleSaveMarketingContent(req, res) {
   try {
     const payload = JSON.parse((await readBody(req)) || "{}");
-    const { title, contentType, businessCategory, userRequest, generatedOutput, status } = payload;
+    const {
+      title,
+      contentType,
+      businessCategory,
+      userRequest,
+      generatedOutput,
+      status,
+      companyId,
+      targetAudience,
+      region,
+      campaignGoal,
+      tone,
+      recommendation,
+      qualityScore,
+      selectedCompanyProfile,
+    } = payload;
 
     if (!generatedOutput || !String(generatedOutput).trim()) {
       sendJson(res, 400, { error: "There is no generated content to save." });
@@ -1086,9 +1427,17 @@ async function handleSaveMarketingContent(req, res) {
     }
 
     const result = await saveMarketingContent({
-      title: String(title || `${contentType || "Marketing Content"} - ${businessCategory || "CygniSoft"}`).trim(),
+      title: String(title || `${contentType || "Marketing Content"} - ${businessCategory || "Selected Company"}`).trim(),
+      company_id: companyId || null,
       content_type: contentType || "",
       business_category: businessCategory || "",
+      target_audience: targetAudience || "",
+      region: region || "",
+      campaign_goal: campaignGoal || "",
+      tone: tone || "",
+      recommendation: recommendation || null,
+      quality_score: qualityScore || null,
+      selected_company_profile: selectedCompanyProfile || null,
       user_request: userRequest || "",
       generated_output: generatedOutput,
       status: status || "draft",
@@ -1114,6 +1463,7 @@ async function handleGetSavedMarketingContent(req, res) {
     const result = await getSavedMarketingContent({
       contentType: url.searchParams.get("contentType") || "",
       businessCategory: url.searchParams.get("businessCategory") || "",
+      companyId: url.searchParams.get("companyId") || "",
     });
 
     if (result.error) {
@@ -1162,6 +1512,87 @@ async function handleDeleteMarketingContent(_req, res, id) {
     console.error(error);
     sendJson(res, 500, { error: error.message || "Unable to delete saved content." });
   }
+}
+
+async function handleListCompanies(_req, res) {
+  try {
+    const result = await listCompanies();
+    sendJson(res, 200, { companies: result.data || [], supabaseConfigured: result.configured, error: result.error });
+  } catch (error) {
+    console.error(error);
+    sendJson(res, 500, { error: error.message || "Unable to load companies.", companies: [defaultCompanyProfile] });
+  }
+}
+
+async function handleCreateCompany(req, res) {
+  try {
+    const payload = normalizeCompanyPayload(JSON.parse((await readBody(req)) || "{}"));
+    if (!payload.company_name) {
+      sendJson(res, 400, { error: "Company name is required." });
+      return;
+    }
+    const result = await createCompany(payload);
+    if (result.error) {
+      sendJson(res, result.configured ? 500 : 503, { error: result.error, supabaseConfigured: result.configured });
+      return;
+    }
+    sendJson(res, 200, { company: result.data, supabaseConfigured: true });
+  } catch (error) {
+    console.error(error);
+    sendJson(res, 500, { error: error.message || "Unable to create company." });
+  }
+}
+
+async function handleUpdateCompany(req, res, id) {
+  try {
+    const payload = normalizeCompanyPayload(JSON.parse((await readBody(req)) || "{}"));
+    const result = await updateCompany(id, payload);
+    if (result.error) {
+      sendJson(res, result.configured ? 500 : 503, { error: result.error, supabaseConfigured: result.configured });
+      return;
+    }
+    sendJson(res, 200, { company: result.data, supabaseConfigured: true });
+  } catch (error) {
+    console.error(error);
+    sendJson(res, 500, { error: error.message || "Unable to update company." });
+  }
+}
+
+async function handleDeleteCompany(_req, res, id) {
+  try {
+    const result = await deleteCompany(id);
+    if (result.error) {
+      sendJson(res, result.configured ? 500 : 503, { error: result.error, supabaseConfigured: result.configured });
+      return;
+    }
+    sendJson(res, 200, { deleted: true, company: result.data });
+  } catch (error) {
+    console.error(error);
+    sendJson(res, 500, { error: error.message || "Unable to delete company." });
+  }
+}
+
+function normalizeCompanyPayload(payload) {
+  return {
+    company_name: String(payload.company_name || payload.companyName || "").trim(),
+    website_urls: normalizeArray(payload.website_urls || payload.websiteUrls),
+    industry: String(payload.industry || "").trim(),
+    services: normalizeArray(payload.services),
+    products: normalizeArray(payload.products),
+    target_audience: normalizeArray(payload.target_audience || payload.targetAudience),
+    brand_tone: String(payload.brand_tone || payload.brandTone || "").trim(),
+    competitors: normalizeArray(payload.competitors),
+    notes: String(payload.notes || "").trim(),
+    profile: payload.profile || {},
+  };
+}
+
+function normalizeArray(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean);
+  return String(value || "")
+    .split(/\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 async function fetchPages(urls) {
@@ -1262,7 +1693,7 @@ function extractKnowledgeFromPages(pages) {
 async function generateKnowledgeProfileWithOpenAI(pages, profile) {
   return generateAnalysisWithOpenAI({
     task:
-      "Create a structured CygniSoft company knowledge profile from the provided public website text. Use only extracted facts and call out missing information clearly.",
+      "Create a structured company profile from the provided public website text. Use only extracted facts and call out missing information clearly.",
     context: `${formatPagesForPrompt(pages)}\n\nHeuristic extraction:\n${formatCompanyKnowledgeProfile(profile)}`,
     format: companyKnowledgeFormat,
   });
@@ -1323,7 +1754,7 @@ CTA Improvements
 ${bulletList([
     profile.existingCtas.length
       ? "Make the main CTA more specific to the page goal and repeat it near the top and bottom of the page."
-      : "Add a clear primary CTA such as Contact CygniSoft, Request staffing support, or Discuss a software project.",
+      : "Add a clear primary CTA such as Contact us, Request support, or Discuss a project.",
     "Add a secondary CTA for visitors who are not ready to contact yet, such as View services or Share your requirements.",
   ])}
 
@@ -1337,37 +1768,38 @@ ${bulletList(profile.recommendedImprovements)}`;
 function formatCompetitorReview(cygniPages, competitorPages, companyProfile = null) {
   const cygniProfile = cygniPages.length ? extractKnowledgeFromPages(cygniPages) : companyProfile;
   const compProfile = extractKnowledgeFromPages(competitorPages);
+  const companyName = getSelectedCompanyName(companyProfile);
 
   return `Executive Summary
-Competitor pages were reviewed against the available CygniSoft website knowledge. This local review uses visible page text only and does not infer proof that was not present.
+Competitor pages were reviewed against the available ${companyName} website knowledge. This local review uses visible page text only and does not infer proof that was not present.
 
-CygniSoft Positioning
-${companyDetails.positioning}
+${companyName} Positioning
+${cygniProfile?.companyOverview || `${companyName} positioning was not clearly found in the available profile.`}
 
 Competitor Positioning
 ${compProfile.companyOverview || "Competitor positioning was not clearly found in the fetched pages."}
 
 What Competitors Do Better
-${bulletList(compProfile.trustSignals.length ? ["Competitors show visible trust signals that CygniSoft should evaluate.", ...compProfile.trustSignals] : ["No clear competitor trust signals were extracted from the fetched pages."])}
+${bulletList(compProfile.trustSignals.length ? [`Competitors show visible trust signals that ${companyName} should evaluate.`, ...compProfile.trustSignals] : ["No clear competitor trust signals were extracted from the fetched pages."])}
 
-What CygniSoft Does Better
-${bulletList(cygniProfile ? [cygniProfile.companyOverview, ...((cygniProfile.staffingServices || []).slice(0, 3)), ...((cygniProfile.softwareItServices || []).slice(0, 3))].filter(Boolean) : ["Build a CygniSoft knowledge profile to identify strengths more clearly."])}
+What ${companyName} Does Better
+${bulletList(cygniProfile ? [cygniProfile.companyOverview, ...((cygniProfile.staffingServices || []).slice(0, 3)), ...((cygniProfile.softwareItServices || []).slice(0, 3))].filter(Boolean) : ["Build a company profile to identify strengths more clearly."])}
 
 Marketing Gaps
-${bulletList(cygniProfile?.missingInformation || ["CygniSoft gaps could not be fully assessed without fetched CygniSoft pages or a saved knowledge profile."])}
+${bulletList(cygniProfile?.missingInformation || [`${companyName} gaps could not be fully assessed without fetched company pages or a saved profile.`])}
 
 Website Improvements
-${bulletList(cygniProfile?.recommendedImprovements || ["Build the CygniSoft company knowledge profile first, then rerun this review."])}
+${bulletList(cygniProfile?.recommendedImprovements || ["Build the company profile first, then rerun this review."])}
 
 SEO Suggestions
-${bulletList((compProfile.seoKeywords || []).slice(0, 10).map((keyword) => `Review whether "${keyword}" is relevant to CygniSoft pages.`))}
+${bulletList((compProfile.seoKeywords || []).slice(0, 10).map((keyword) => `Review whether "${keyword}" is relevant to ${companyName} pages.`))}
 
 CTA Suggestions
 ${bulletList(compProfile.existingCtas.length ? compProfile.existingCtas.map((cta) => `Competitor CTA observed: ${cta}`) : ["Add direct CTAs for staffing, software projects, and consultation requests."])}
 
 Priority Action Plan
 ${bulletList([
-    "Clarify CygniSoft's main service categories on key pages.",
+    `Clarify ${companyName}'s main service categories on key pages.`,
     "Add proof only where real evidence exists, such as testimonials, certifications, or project examples.",
     "Strengthen CTAs by matching them to each page's intent.",
     "Add service-specific SEO headings for staffing, healthcare staffing, software development, and automation.",
@@ -1375,7 +1807,8 @@ ${bulletList([
 }
 
 function buildMarketResearchPromptContext({ industry, region, researchFocus, notes }, companyProfile = null) {
-  return `CygniSoft profile:
+  const companyName = getSelectedCompanyName(companyProfile);
+  return `${companyName} profile:
 ${formatKnowledgeProfileForPrompt(companyProfile)}
 
 Market research inputs:
@@ -1389,12 +1822,13 @@ If no verified sources are included, start the output with: AI-generated researc
 
 Rules:
 - Do not invent exact statistics, job counts, company names, or live claims.
-- Keep recommendations tied to CygniSoft staffing and software services.
+- Keep recommendations tied to the selected company's staffing, software, or service offerings.
 - Include Sources / Notes for future web search citations.`;
 }
 
 function buildLeadPlannerPromptContext({ service, targetAudience, region, campaignGoal, campaignDuration, notes }, companyProfile = null) {
-  return `CygniSoft profile:
+  const companyName = getSelectedCompanyName(companyProfile);
+  return `${companyName} profile:
 ${formatKnowledgeProfileForPrompt(companyProfile)}
 
 Lead and campaign inputs:
@@ -1416,9 +1850,11 @@ Safety rules:
 
 function buildMarketTrendsFallback({ industry, region, researchFocus, notes }, companyProfile = null) {
   const industryPlan = marketPlaybooks[industry] || marketPlaybooks["General Market"];
+  const companyName = getSelectedCompanyName(companyProfile);
+  const localizedPlan = localizeCompanyName(industryPlan, companyName);
   const profileNote = companyProfile
-    ? "Saved CygniSoft knowledge was considered when shaping these recommendations."
-    : "No saved CygniSoft company profile is available yet, so this uses the default CygniSoft context.";
+    ? `The selected ${companyName} profile was considered when shaping these recommendations.`
+    : "No selected company profile is available yet, so this uses general market context.";
   const notesLine = notes ? `User notes considered: ${notes}` : "No additional notes were provided.";
 
   return `AI-generated research based on provided context and general market knowledge.
@@ -1427,34 +1863,34 @@ Executive Summary
 For ${industry} in ${region}, the safest opportunity is to promote services that solve visible business pressure: staffing gaps, manual admin work, disconnected systems, and clearer client or candidate communication. ${profileNote} Focus requested: ${researchFocus}. ${notesLine}
 
 Current Hiring Trends
-${bulletList(industryPlan.hiringTrends)}
+${bulletList(localizedPlan.hiringTrends)}
 
 In-Demand Roles
-${bulletList(industryPlan.roles)}
+${bulletList(localizedPlan.roles)}
 
 Industries Showing Demand
-${bulletList(industryPlan.demandIndustries)}
+${bulletList(localizedPlan.demandIndustries)}
 
 Software / Automation Needs
-${bulletList(industryPlan.softwareNeeds)}
+${bulletList(localizedPlan.softwareNeeds)}
 
-Opportunities for CygniSoft Staffing Services
-${bulletList(industryPlan.staffingOpportunities)}
+Opportunities for ${companyName} Staffing Services
+${bulletList(localizedPlan.staffingOpportunities)}
 
-Opportunities for CygniSoft Software Services
-${bulletList(industryPlan.softwareOpportunities)}
+Opportunities for ${companyName} Software Services
+${bulletList(localizedPlan.softwareOpportunities)}
 
 Recommended Services to Promote
-${bulletList(industryPlan.servicesToPromote)}
+${bulletList(localizedPlan.servicesToPromote)}
 
 Suggested Marketing Angles
-${bulletList(industryPlan.marketingAngles)}
+${bulletList(localizedPlan.marketingAngles)}
 
 Suggested LinkedIn Content Ideas
-${bulletList(industryPlan.linkedinIdeas)}
+${bulletList(localizedPlan.linkedinIdeas)}
 
 Suggested Outreach Targets
-${bulletList(industryPlan.outreachTargets)}
+${bulletList(localizedPlan.outreachTargets)}
 
 Risks / Uncertainties
 ${bulletList([
@@ -1470,14 +1906,16 @@ Sources / Notes
 
 function buildLeadPlannerFallback({ service, targetAudience, region, campaignGoal, campaignDuration, notes }, companyProfile = null) {
   const plan = campaignPlaybooks[service] || campaignPlaybooks["Custom Software Development"];
+  const companyName = getSelectedCompanyName(companyProfile);
+  const localizedPlan = localizeCompanyName(plan, companyName);
   const profileNote = companyProfile
-    ? "Use the saved CygniSoft knowledge profile to keep service descriptions aligned with current company messaging."
-    : "Build the CygniSoft company knowledge profile for more company-specific language.";
+    ? "Use the selected company profile to keep service descriptions aligned with current company messaging."
+    : "Build the company profile for more company-specific language.";
   const cadence = buildCampaignCadence(campaignDuration);
   const notesLine = notes ? `Campaign notes: ${notes}` : "No extra campaign notes provided.";
 
   return `Ideal Customer Profile
-${targetAudience} in ${region} that are likely dealing with ${plan.painPoints[0].toLowerCase()} and need a professional, practical partner. ${profileNote}
+${targetAudience} in ${region} that are likely dealing with ${localizedPlan.painPoints[0].toLowerCase()} and need a professional, practical partner. ${profileNote}
 
 Lead Targeting Strategy
 ${bulletList([
@@ -1487,28 +1925,28 @@ ${bulletList([
   ])}
 
 Where to Find Leads
-${bulletList(plan.leadSources)}
+${bulletList(localizedPlan.leadSources)}
 
 Campaign Positioning
-${companyDetails.positioning} For this campaign, position ${service} as a way for ${targetAudience} to reduce operational pressure without overcomplicating the process.
+Position ${companyName}'s ${service} as a way for ${targetAudience} to reduce operational pressure without overcomplicating the process.
 
 Main Pain Points
-${bulletList(plan.painPoints)}
+${bulletList(localizedPlan.painPoints)}
 
 Value Proposition
-CygniSoft helps ${targetAudience} in ${region} address [Pain Point] through ${service}, with clear communication, simple next steps, and solutions shaped around real business needs.
+${companyName} helps ${targetAudience} in ${region} address [Pain Point] through ${service}, with clear communication, simple next steps, and solutions shaped around real business needs.
 
 Outreach Message
-Hi [Contact Name], I noticed [Company Name] works in [Industry]. If [Pain Point] is taking time away from your team, CygniSoft may be able to help with ${service}. Would it be useful to have a short conversation about what you are trying to improve?
+Hi [Contact Name], I noticed [Company Name] works in [Industry]. If [Pain Point] is taking time away from your team, ${companyName} may be able to help with ${service}. Would it be useful to have a short conversation about what you are trying to improve?
 
 Cold Email Sequence
-${buildColdEmailSequence(service, targetAudience, campaignGoal)}
+${localizeCompanyName(buildColdEmailSequence(service, targetAudience, campaignGoal), companyName)}
 
 LinkedIn Message Sequence
-${buildLinkedInSequence(service)}
+${localizeCompanyName(buildLinkedInSequence(service), companyName)}
 
 LinkedIn Post Ideas
-${bulletList(plan.postIdeas)}
+${bulletList(localizedPlan.postIdeas)}
 
 Follow-Up Plan
 ${bulletList(cadence)}
@@ -1569,7 +2007,7 @@ function buildColdEmailSequence(service, targetAudience, campaignGoal) {
 Subject: Quick question about ${service}
 Hi [Contact Name],
 
-I am reaching out because many ${targetAudience.toLowerCase()} are looking for better ways to handle [Pain Point]. CygniSoft helps businesses grow with the right people and the right software, and ${service} may be relevant for [Company Name].
+I am reaching out because many ${targetAudience.toLowerCase()} are looking for better ways to handle [Pain Point]. CygniSoft may be able to help with ${service}, depending on what [Company Name] is trying to improve.
 
 Would you be open to a short conversation?
 
@@ -1715,7 +2153,7 @@ function buildRecommendedImprovements(text) {
   const improvements = [
     "Add clearer service sections for staffing, software development, healthcare, and technology services.",
     "Use page-specific CTAs that match the visitor's intent.",
-    "Add real trust signals only if CygniSoft can verify them.",
+    "Add real trust signals only if the company can verify them.",
     "Clarify target industries and ideal clients on service pages.",
     "Add concise proof points, project examples, or process steps where available.",
   ];
@@ -1782,7 +2220,7 @@ function getCompanyProfileFromPayload(payload) {
   };
 }
 
-async function saveCompanyKnowledge({ companyName = "CygniSoft", websiteUrls = [], profile }) {
+async function saveCompanyKnowledge({ companyName = "Company", websiteUrls = [], profile, companyId = null }) {
   const supabase = getSupabaseClient();
   if (!supabase) return { data: null, error: getSupabaseMissingMessage(), configured: false };
 
@@ -1791,6 +2229,7 @@ async function saveCompanyKnowledge({ companyName = "CygniSoft", websiteUrls = [
     .from("company_knowledge")
     .insert({
       company_name: companyName,
+      company_id: companyId,
       website_urls: websiteUrls,
       profile,
       created_at: now,
@@ -1802,27 +2241,28 @@ async function saveCompanyKnowledge({ companyName = "CygniSoft", websiteUrls = [
   return { data, error: error?.message || null, configured: true };
 }
 
-async function getLatestCompanyKnowledge() {
+async function getLatestCompanyKnowledge(companyId = "") {
   const supabase = getSupabaseClient();
   if (!supabase) return { data: null, error: getSupabaseMissingMessage(), configured: false };
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("company_knowledge")
     .select("*")
-    .eq("company_name", "CygniSoft")
     .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+  if (companyId) query = query.eq("company_id", companyId);
+  const { data, error } = await query.maybeSingle();
 
   return { data, error: error?.message || null, configured: true };
 }
 
-async function updateCompanyKnowledge({ id, companyName = "CygniSoft", websiteUrls = [], profile }) {
+async function updateCompanyKnowledge({ id, companyName = "Company", websiteUrls = [], profile, companyId = null }) {
   const supabase = getSupabaseClient();
   if (!supabase) return { data: null, error: getSupabaseMissingMessage(), configured: false };
 
   const values = {
     company_name: companyName,
+    company_id: companyId,
     website_urls: websiteUrls,
     profile,
     updated_at: new Date().toISOString(),
@@ -1833,11 +2273,13 @@ async function updateCompanyKnowledge({ id, companyName = "CygniSoft", websiteUr
   return { data, error: error?.message || null, configured: true };
 }
 
-async function clearCompanyKnowledge() {
+async function clearCompanyKnowledge(companyId = "") {
   const supabase = getSupabaseClient();
   if (!supabase) return { data: null, error: getSupabaseMissingMessage(), configured: false };
 
-  const { data, error } = await supabase.from("company_knowledge").delete().eq("company_name", "CygniSoft").select();
+  let query = supabase.from("company_knowledge").delete();
+  if (companyId) query = query.eq("company_id", companyId);
+  const { data, error } = await query.select();
   return { data, error: error?.message || null, configured: true };
 }
 
@@ -1845,15 +2287,31 @@ async function saveMarketingContent(payload) {
   return insertSupabaseRow("saved_marketing_content", payload);
 }
 
-async function getSavedMarketingContent({ contentType, businessCategory } = {}) {
+async function getSavedMarketingContent({ contentType, businessCategory, companyId } = {}) {
   const supabase = getSupabaseClient();
   if (!supabase) return { data: [], error: getSupabaseMissingMessage(), configured: false };
 
   let query = supabase.from("saved_marketing_content").select("*").order("created_at", { ascending: false });
   if (contentType) query = query.eq("content_type", contentType);
   if (businessCategory) query = query.eq("business_category", businessCategory);
+  if (companyId) query = query.eq("company_id", companyId);
   const { data, error } = await query;
   return { data: data || [], error: error?.message || null, configured: true };
+}
+
+async function getLatestContextRows(companyId = "") {
+  const supabase = getSupabaseClient();
+  if (!supabase || !companyId) return { marketContext: "", competitorContext: "", error: null, configured: Boolean(supabase) };
+  const [marketResult, competitorResult] = await Promise.all([
+    supabase.from("market_trends").select("*").eq("company_id", companyId).order("created_at", { ascending: false }).limit(3),
+    supabase.from("competitor_reviews").select("*").eq("company_id", companyId).order("created_at", { ascending: false }).limit(3),
+  ]);
+  return {
+    marketContext: (marketResult.data || []).map((item) => `Market trend (${item.industry || "unknown"} / ${item.region || "unknown"}): ${String(item.output || "").slice(0, 1200)}`).join("\n\n"),
+    competitorContext: (competitorResult.data || []).map((item) => `Competitor review (${(item.competitor_urls || []).join(", ")}): ${String(item.review_output || "").slice(0, 1200)}`).join("\n\n"),
+    error: marketResult.error?.message || competitorResult.error?.message || null,
+    configured: true,
+  };
 }
 
 async function saveWebsiteReview(payload) {
@@ -1880,6 +2338,48 @@ async function insertSupabaseRow(table, payload) {
   return { data, error: error?.message || null, configured: true };
 }
 
+async function listCompanies() {
+  const supabase = getSupabaseClient();
+  if (!supabase) return { data: [defaultCompanyProfile], error: getSupabaseMissingMessage(), configured: false };
+
+  const { data, error } = await supabase.from("companies").select("*").order("updated_at", { ascending: false });
+  return { data: data?.length ? data : [defaultCompanyProfile], error: error?.message || null, configured: true };
+}
+
+async function createCompany(payload) {
+  const supabase = getSupabaseClient();
+  if (!supabase) return { data: null, error: getSupabaseMissingMessage(), configured: false };
+
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("companies")
+    .insert({ ...payload, created_at: now, updated_at: now })
+    .select()
+    .single();
+  return { data, error: error?.message || null, configured: true };
+}
+
+async function updateCompany(id, payload) {
+  const supabase = getSupabaseClient();
+  if (!supabase) return { data: null, error: getSupabaseMissingMessage(), configured: false };
+
+  const { data, error } = await supabase
+    .from("companies")
+    .update({ ...payload, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select()
+    .single();
+  return { data, error: error?.message || null, configured: true };
+}
+
+async function deleteCompany(id) {
+  const supabase = getSupabaseClient();
+  if (!supabase) return { data: null, error: getSupabaseMissingMessage(), configured: false };
+
+  const { data, error } = await supabase.from("companies").delete().eq("id", id).select().single();
+  return { data, error: error?.message || null, configured: true };
+}
+
 async function updateMarketingContentStatus(id, status) {
   const supabase = getSupabaseClient();
   if (!supabase) return { data: null, error: getSupabaseMissingMessage(), configured: false };
@@ -1902,6 +2402,10 @@ async function deleteMarketingContent(id) {
 }
 
 async function resolveCompanyProfile(payload) {
+  if (payload?.selectedCompany) {
+    return { profile: normalizeCompanyToProfile(payload.selectedCompany), source: "selectedCompany", dbError: null };
+  }
+
   const payloadProfile = getCompanyProfileFromPayload(payload);
   if (payloadProfile) return { profile: payloadProfile, source: "request", dbError: null };
 
@@ -1911,6 +2415,52 @@ async function resolveCompanyProfile(payload) {
   }
 
   return { profile: null, source: "none", dbError: latest.configured ? latest.error : latest.error };
+}
+
+function normalizeCompanyToProfile(company) {
+  if (!company) return null;
+  const profile = company.profile || {};
+  return {
+    id: company.id,
+    companyName: company.company_name,
+    companyOverview: profile.companyOverview || profile.company_overview || `${company.company_name || "This company"} operates in ${company.industry || "its market"}.`,
+    staffingServices: filterByTerms([...(company.services || []), ...(company.products || [])], staffingTerms),
+    softwareItServices: filterByTerms([...(company.services || []), ...(company.products || [])], softwareTerms),
+    healthcareServices: filterByTerms([...(company.services || []), ...(company.products || [])], healthcareTerms),
+    technologyServices: filterByTerms([...(company.services || []), ...(company.products || [])], technologyTerms),
+    targetIndustries: company.industry ? [company.industry] : [],
+    targetClients: company.target_audience || [],
+    contactLocationInfo: [],
+    existingCtas: [],
+    seoKeywords: [...(company.services || []), ...(company.products || []), company.industry].filter(Boolean),
+    trustSignals: [],
+    missingInformation: [],
+    recommendedImprovements: [],
+    output: profile.output || formatCompanyBusinessBrain(company),
+  };
+}
+
+function formatCompanyBusinessBrain(company) {
+  return `Company Overview
+${company.company_name || "Company"}${company.industry ? ` operates in ${company.industry}.` : ""}
+
+Website URLs
+${bulletList(company.website_urls || [])}
+
+Services/Products
+${bulletList([...(company.services || []), ...(company.products || [])])}
+
+Target Audience
+${bulletList(company.target_audience || [])}
+
+Brand Tone
+${company.brand_tone || "Not provided"}
+
+Competitors
+${bulletList(company.competitors || [])}
+
+Notes
+${company.notes || "Not provided"}`;
 }
 
 function normalizeStoredProfile(profile) {
@@ -2082,10 +2632,10 @@ SEO suggestions
 Content improvement suggestions`;
 
 const competitorReviewFormat = `Executive Summary
-CygniSoft Positioning
+Selected Company Positioning
 Competitor Positioning
 What Competitors Do Better
-What CygniSoft Does Better
+What Selected Company Does Better
 Marketing Gaps
 Website Improvements
 SEO Suggestions
@@ -2097,8 +2647,8 @@ Current Hiring Trends
 In-Demand Roles
 Industries Showing Demand
 Software / Automation Needs
-Opportunities for CygniSoft Staffing Services
-Opportunities for CygniSoft Software Services
+Opportunities for Selected Company Staffing Services
+Opportunities for Selected Company Software Services
 Recommended Services to Promote
 Suggested Marketing Angles
 Suggested LinkedIn Content Ideas
@@ -2323,12 +2873,50 @@ async function handleGenerate(req, res) {
     const cleanPayload = {
       contentType,
       category,
+      targetAudience: String(payload.targetAudience || "").trim(),
+      region: String(payload.region || "").trim(),
+      campaignGoal: String(payload.campaignGoal || "").trim(),
+      tone: String(payload.tone || "").trim(),
+      marketAwareMode: Boolean(payload.marketAwareMode),
+      suggestBestService: Boolean(payload.suggestBestService),
+      variationCount: Math.max(1, Math.min(3, Number(payload.variationCount || 1))),
+      useLiveSearch: Boolean(payload.useLiveSearch),
       userRequest: String(userRequest).trim(),
     };
 
-    const openAiContent = await generateWithOpenAI(cleanPayload, companyProfile);
-    const content = openAiContent || buildFallbackContent(cleanPayload, companyProfile);
-    sendJson(res, 200, { content, source: openAiContent ? "openai" : "local", usingProfile: Boolean(companyProfile) });
+    const savedContext = await getLatestContextRows(payload.companyId || payload.selectedCompany?.id || "");
+    const liveSearch = await runLiveTrendSearch(cleanPayload, companyProfile);
+    const marketContext = [
+      savedContext.marketContext ? `Saved market/hiring trend data:\n${savedContext.marketContext}` : "",
+      savedContext.competitorContext ? `Saved competitor review data:\n${savedContext.competitorContext}` : "",
+      liveSearch.context ? `Live Tavily search results:\n${liveSearch.context}` : "",
+      cleanPayload.useLiveSearch && !liveSearch.context ? liveSearch.note : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    const recommendation = scorePromotionOpportunity(cleanPayload, companyProfile, {
+      savedMarketAvailable: Boolean(savedContext.marketContext),
+      savedCompetitorAvailable: Boolean(savedContext.competitorContext),
+      liveSearchAvailable: Boolean(liveSearch.context),
+    });
+    const generationContext = { recommendation, marketContext };
+    const openAiContent = await generateWithOpenAI(cleanPayload, companyProfile, generationContext);
+    const rawContent = openAiContent || buildFallbackContent(cleanPayload, companyProfile);
+    const content = applyVariationWrapper(rawContent, cleanPayload.variationCount, contentType);
+    const qualityScore = scoreGeneratedContent(content, cleanPayload, companyProfile, recommendation);
+    sendJson(res, 200, {
+      content,
+      recommendation,
+      qualityScore,
+      strategy: cleanPayload,
+      searchNote: cleanPayload.useLiveSearch ? liveSearch.note : "",
+      liveSearchConfigured: cleanPayload.useLiveSearch && liveSearch.configured,
+      liveSearchUsed: Boolean(liveSearch.context),
+      liveSearchProvider: liveSearch.provider,
+      liveSearchResults: liveSearch.results || [],
+      source: openAiContent ? "openai" : "local",
+      usingProfile: Boolean(companyProfile),
+    });
   } catch (error) {
     console.error(error);
     sendJson(res, 500, {
@@ -2348,6 +2936,26 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "GET" && url.pathname === "/api/company-knowledge") {
     handleGetCompanyProfile(req, res);
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/companies") {
+    handleListCompanies(req, res);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/companies") {
+    handleCreateCompany(req, res);
+    return;
+  }
+
+  if (req.method === "PATCH" && url.pathname.startsWith("/api/companies/")) {
+    handleUpdateCompany(req, res, decodeURIComponent(url.pathname.split("/").pop()));
+    return;
+  }
+
+  if (req.method === "DELETE" && url.pathname.startsWith("/api/companies/")) {
+    handleDeleteCompany(req, res, decodeURIComponent(url.pathname.split("/").pop()));
     return;
   }
 
@@ -2416,5 +3024,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`CygniSoft AI Marketing Agent running at http://localhost:${PORT}`);
+  console.log(`CygniSoft AI Agent running at http://localhost:${PORT}`);
 });

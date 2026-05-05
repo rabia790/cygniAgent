@@ -109,6 +109,75 @@ h2 {
   border-bottom: 1px solid var(--line);
 }
 
+.company-bar {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 22px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 18px;
+}
+
+.company-selector-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.company-selector-row select {
+  width: min(100%, 360px);
+}
+
+.company-form {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.check-option {
+  display: flex;
+  min-height: 44px;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+  color: var(--muted);
+}
+
+.check-option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.score-panel {
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 14px;
+}
+
+.score-panel pre {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
 .tab-button {
   flex: 0 0 auto;
   min-height: 42px;

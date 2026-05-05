@@ -82,11 +82,22 @@ export const CAMPAIGN_GOALS = [
 
 export const CAMPAIGN_DURATIONS = ["7 days", "14 days", "30 days"];
 
+export const CONTENT_TONES = [
+  "Professional and clear",
+  "Friendly and simple",
+  "Confident but not salesy",
+  "Educational",
+  "Consultative",
+  "Direct and concise",
+];
+
+export const VARIATION_COUNTS = ["1", "2", "3"];
+
 export const CONTENT_STATUSES = ["draft", "approved", "used"];
 
 export const COMPANY_DETAILS = {
-  name: "CygniSoft",
+  name: "CygniSoft AI Agent",
   subtitle:
-    "Generate marketing content for staffing services, software solutions, and business products.",
+    "Create company-specific marketing content, website reviews, research, and campaigns.",
   positioning: "CygniSoft helps businesses grow with the right people and the right software.",
 };
