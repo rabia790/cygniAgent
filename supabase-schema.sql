@@ -171,6 +171,53 @@ alter table lead_magnets add column if not exists created_by uuid references aut
 alter table website_scorecards add column if not exists company_id uuid references companies(id) on delete cascade;
 alter table website_scorecards add column if not exists created_by uuid references auth.users(id) on delete set null;
 
+-- Backfill ownership for rows saved before per-user ownership was added.
+-- Rows without a company_id cannot be safely assigned to a user and will be hidden by RLS.
+update company_knowledge ck
+set created_by = c.owner_id
+from companies c
+where ck.company_id = c.id and ck.created_by is null;
+
+update saved_marketing_content smc
+set created_by = c.owner_id
+from companies c
+where smc.company_id = c.id and smc.created_by is null;
+
+update website_reviews wr
+set created_by = c.owner_id
+from companies c
+where wr.company_id = c.id and wr.created_by is null;
+
+update competitor_reviews cr
+set created_by = c.owner_id
+from companies c
+where cr.company_id = c.id and cr.created_by is null;
+
+update market_trends mt
+set created_by = c.owner_id
+from companies c
+where mt.company_id = c.id and mt.created_by is null;
+
+update campaign_plans cp
+set created_by = c.owner_id
+from companies c
+where cp.company_id = c.id and cp.created_by is null;
+
+update seo_page_plans spp
+set created_by = c.owner_id
+from companies c
+where spp.company_id = c.id and spp.created_by is null;
+
+update lead_magnets lm
+set created_by = c.owner_id
+from companies c
+where lm.company_id = c.id and lm.created_by is null;
+
+update website_scorecards ws
+set created_by = c.owner_id
+from companies c
+where ws.company_id = c.id and ws.created_by is null;
+
 -- Enable RLS
 alter table user_profiles enable row level security;
 alter table companies enable row level security;
@@ -211,7 +258,6 @@ as $$
     where c.id = target_company_id
       and (
         c.owner_id = auth.uid()
-        or c.visibility = 'public_demo'
         or public.is_admin()
         or exists (
           select 1 from public.company_members cm
@@ -260,7 +306,7 @@ with check (id = auth.uid() or public.is_admin());
 
 drop policy if exists "companies_select_access" on companies;
 create policy "companies_select_access" on companies for select
-using (owner_id = auth.uid() or visibility = 'public_demo' or public.is_admin() or exists (
+using (owner_id = auth.uid() or public.is_admin() or exists (
   select 1 from company_members cm where cm.company_id = companies.id and cm.user_id = auth.uid()
 ));
 
@@ -288,45 +334,45 @@ with check (public.can_edit_company(company_id));
 
 drop policy if exists "company_knowledge_access" on company_knowledge;
 create policy "company_knowledge_access" on company_knowledge for all
-using (public.can_access_company(company_id))
-with check (public.can_access_company(company_id) and (created_by is null or created_by = auth.uid() or public.is_admin()));
+using (public.can_access_company(company_id) and (created_by = auth.uid() or public.is_admin()))
+with check (public.can_access_company(company_id) and (created_by = auth.uid() or public.is_admin()));
 
 drop policy if exists "saved_marketing_content_access" on saved_marketing_content;
 create policy "saved_marketing_content_access" on saved_marketing_content for all
-using (public.can_access_company(company_id))
-with check (public.can_access_company(company_id) and (created_by is null or created_by = auth.uid() or public.is_admin()));
+using (public.can_access_company(company_id) and (created_by = auth.uid() or public.is_admin()))
+with check (public.can_access_company(company_id) and (created_by = auth.uid() or public.is_admin()));
 
 drop policy if exists "website_reviews_access" on website_reviews;
 create policy "website_reviews_access" on website_reviews for all
-using (public.can_access_company(company_id))
-with check (public.can_access_company(company_id) and (created_by is null or created_by = auth.uid() or public.is_admin()));
+using (public.can_access_company(company_id) and (created_by = auth.uid() or public.is_admin()))
+with check (public.can_access_company(company_id) and (created_by = auth.uid() or public.is_admin()));
 
 drop policy if exists "competitor_reviews_access" on competitor_reviews;
 create policy "competitor_reviews_access" on competitor_reviews for all
-using (public.can_access_company(company_id))
-with check (public.can_access_company(company_id) and (created_by is null or created_by = auth.uid() or public.is_admin()));
+using (public.can_access_company(company_id) and (created_by = auth.uid() or public.is_admin()))
+with check (public.can_access_company(company_id) and (created_by = auth.uid() or public.is_admin()));
 
 drop policy if exists "market_trends_access" on market_trends;
 create policy "market_trends_access" on market_trends for all
-using (public.can_access_company(company_id))
-with check (public.can_access_company(company_id) and (created_by is null or created_by = auth.uid() or public.is_admin()));
+using (public.can_access_company(company_id) and (created_by = auth.uid() or public.is_admin()))
+with check (public.can_access_company(company_id) and (created_by = auth.uid() or public.is_admin()));
 
 drop policy if exists "campaign_plans_access" on campaign_plans;
 create policy "campaign_plans_access" on campaign_plans for all
-using (public.can_access_company(company_id))
-with check (public.can_access_company(company_id) and (created_by is null or created_by = auth.uid() or public.is_admin()));
+using (public.can_access_company(company_id) and (created_by = auth.uid() or public.is_admin()))
+with check (public.can_access_company(company_id) and (created_by = auth.uid() or public.is_admin()));
 
 drop policy if exists "seo_page_plans_access" on seo_page_plans;
 create policy "seo_page_plans_access" on seo_page_plans for all
-using (public.can_access_company(company_id))
-with check (public.can_access_company(company_id) and (created_by is null or created_by = auth.uid() or public.is_admin()));
+using (public.can_access_company(company_id) and (created_by = auth.uid() or public.is_admin()))
+with check (public.can_access_company(company_id) and (created_by = auth.uid() or public.is_admin()));
 
 drop policy if exists "lead_magnets_access" on lead_magnets;
 create policy "lead_magnets_access" on lead_magnets for all
-using (public.can_access_company(company_id))
-with check (public.can_access_company(company_id) and (created_by is null or created_by = auth.uid() or public.is_admin()));
+using (public.can_access_company(company_id) and (created_by = auth.uid() or public.is_admin()))
+with check (public.can_access_company(company_id) and (created_by = auth.uid() or public.is_admin()));
 
 drop policy if exists "website_scorecards_access" on website_scorecards;
 create policy "website_scorecards_access" on website_scorecards for all
-using (public.can_access_company(company_id))
-with check (public.can_access_company(company_id) and (created_by is null or created_by = auth.uid() or public.is_admin()));
+using (public.can_access_company(company_id) and (created_by = auth.uid() or public.is_admin()))
+with check (public.can_access_company(company_id) and (created_by = auth.uid() or public.is_admin()));

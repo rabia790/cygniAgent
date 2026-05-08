@@ -1157,9 +1157,20 @@ async function handleBuildKnowledge(req, res) {
   }
 }
 
-async function handleGetCompanyProfile(_req, res) {
+async function handleGetCompanyProfile(req, res) {
   try {
-    const result = await getLatestCompanyKnowledge();
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const companyId = url.searchParams.get("companyId") || "";
+    if (!companyId) {
+      sendJson(res, 200, {
+        profile: null,
+        output: "No company knowledge profile has been built yet.",
+        supabaseConfigured: true,
+        error: null,
+      });
+      return;
+    }
+    const result = await getLatestCompanyKnowledge(companyId);
     const profile = normalizeStoredProfile(result.data?.profile);
     sendJson(res, 200, {
       profile,
@@ -1189,11 +1200,11 @@ async function handleUpdateCompanyProfile(req, res) {
       updatedAt: new Date().toISOString(),
     };
     const targetCompanyId = companyId || selectedCompany?.id || null;
-    const latest = id
-      ? { data: { id } }
-      : targetCompanyId
-        ? await getLatestCompanyKnowledge(targetCompanyId)
-        : await getLatestCompanyKnowledge();
+    if (!targetCompanyId) {
+      sendJson(res, 400, { error: "Please create or select a company before saving company knowledge." });
+      return;
+    }
+    const latest = id ? { data: { id } } : await getLatestCompanyKnowledge(targetCompanyId);
     const result = latest.data?.id
       ? await updateCompanyKnowledge({
           id: latest.data.id,
@@ -1230,14 +1241,16 @@ async function handleClearCompanyProfile(req, res) {
   try {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
     const companyId = url.searchParams.get("companyId") || "";
+    if (!companyId) {
+      sendJson(res, 400, { error: "Please create or select a company before clearing company knowledge." });
+      return;
+    }
     const result = await clearCompanyKnowledge(companyId);
     if (result.error) {
       sendJson(res, result.configured ? 500 : 503, { error: result.error, supabaseConfigured: result.configured });
       return;
     }
-    if (companyId) {
-      await updateCompany(companyId, { profile: {} });
-    }
+    await updateCompany(companyId, { profile: {} });
     sendJson(res, 200, { profile: null, output: "No company knowledge profile has been built yet.", supabaseConfigured: true });
   } catch (error) {
     console.error(error);
@@ -2385,6 +2398,7 @@ async function getLatestCompanyKnowledge(companyId = "") {
 async function updateCompanyKnowledge({ id, companyName = "Company", websiteUrls = [], profile, companyId = null }) {
   const supabase = getSupabaseClient();
   if (!supabase) return { data: null, error: getSupabaseMissingMessage(), configured: false };
+  if (!id && !companyId) return { data: null, error: "Company id is required before updating company knowledge.", configured: true };
 
   const values = {
     company_name: companyName,
@@ -2394,7 +2408,7 @@ async function updateCompanyKnowledge({ id, companyName = "Company", websiteUrls
     updated_at: new Date().toISOString(),
   };
   const query = supabase.from("company_knowledge").update(values);
-  const { data, error } = await (id ? query.eq("id", id) : query.eq("company_name", companyName)).select().single();
+  const { data, error } = await (id ? query.eq("id", id) : query.eq("company_id", companyId)).select().single();
 
   return { data, error: error?.message || null, configured: true };
 }
@@ -2418,6 +2432,7 @@ async function getSavedMarketingContent({ contentType, businessCategory, company
   if (!supabase) return { data: [], error: getSupabaseMissingMessage(), configured: false };
 
   let query = supabase.from("saved_marketing_content").select("*").order("created_at", { ascending: false });
+  query = query.eq("created_by", getCurrentUser()?.id || "");
   if (contentType) query = query.eq("content_type", contentType);
   if (businessCategory) query = query.eq("business_category", businessCategory);
   if (companyId) query = query.eq("company_id", companyId);
@@ -2612,7 +2627,10 @@ async function resolveCompanyProfile(payload) {
   const payloadProfile = getCompanyProfileFromPayload(payload);
   if (payloadProfile) return { profile: payloadProfile, source: "request", dbError: null };
 
-  const latest = await getLatestCompanyKnowledge();
+  const companyId = payload?.companyId || "";
+  if (!companyId) return { profile: null, source: "none", dbError: null };
+
+  const latest = await getLatestCompanyKnowledge(companyId);
   if (latest.data?.profile) {
     return { profile: normalizeStoredProfile(latest.data.profile), source: "supabase", dbError: null };
   }
