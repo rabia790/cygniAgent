@@ -15,6 +15,9 @@ A clean marketing workspace for creating company-specific content, website revie
 - Graceful error messages
 - Optional OpenAI-powered generation through environment variables
 - Local fallback generator so the app works without an API key
+- Supabase Auth with email/password sign up, email confirmation, sign in, forgot password, and reset password flows
+- User-based company/data isolation through Supabase RLS
+- Admin role support through `user_profiles.role = 'admin'`
 - Company selector for creating, selecting, editing, and deleting company profiles
 - Company Business Brain builder for public company URLs
 - Website Review mode for page clarity, CTA, SEO, and content suggestions
@@ -37,7 +40,7 @@ A clean marketing workspace for creating company-specific content, website revie
 
 The browser automatically sends the currently selected company profile with Generate Content, Build Company Profile, Website Review, Competitor Review, Market & Hiring Trends, Lead & Campaign Planner, and Content Library requests. If no company is selected, the UI asks the user to create or select a company profile first. CygniSoft is included as the default/example profile when no database rows exist.
 
-Supabase is the primary persistent storage. Browser localStorage remains a fallback for internal use when Supabase is not configured or a database save fails. TODO: for larger multi-user production, add authentication and user-scoped database rows.
+Supabase is the primary persistent storage and authentication provider. Browser localStorage remains only as a non-authoritative UI fallback for the selected profile text.
 
 ## Testing Version 4
 
@@ -111,13 +114,40 @@ GOOGLE_CUSTOM_SEARCH_API_KEY=
 
 Only Tavily is implemented right now. The other search keys are placeholders for future provider adapters.
 
-4. Run the full SQL in [supabase-schema.sql](./supabase-schema.sql) in the Supabase SQL editor. It creates the multi-company schema:
+4. In Supabase Auth settings, enable the Email provider. Turn on email/password signups and email confirmations.
+5. Add your site URL and deployed Vercel URL to Auth > URL Configuration.
+6. Run the full SQL in [supabase-schema.sql](./supabase-schema.sql) in the Supabase SQL editor. It creates:
+
+- `user_profiles`
+- `companies`
+- `company_members`
+- `company_knowledge`
+- `saved_marketing_content`
+- `website_reviews`
+- `competitor_reviews`
+- `market_trends`
+- `campaign_plans`
+- `seo_page_plans`
+- `lead_magnets`
+- `website_scorecards`
+- RLS helper functions: `is_admin()`, `can_access_company()`, `can_edit_company()`
+- RLS policies for user-owned, shared, demo, and admin access
+
+The schema includes these core auth/isolation structures:
 
 ```sql
 create extension if not exists "pgcrypto";
 
+create table if not exists user_profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  email text,
+  role text default 'user',
+  created_at timestamp with time zone default now()
+);
+
 create table if not exists companies (
   id uuid primary key default gen_random_uuid(),
+  owner_id uuid references auth.users(id) on delete cascade,
   company_name text not null,
   website_urls text[],
   industry text,
@@ -128,8 +158,17 @@ create table if not exists companies (
   competitors jsonb,
   notes text,
   profile jsonb,
+  visibility text default 'private',
   created_at timestamp with time zone default now(),
   updated_at timestamp with time zone default now()
+);
+
+create table if not exists company_members (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid references companies(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade,
+  role text default 'viewer',
+  created_at timestamp with time zone default now()
 );
 
 create table if not exists company_knowledge (
@@ -252,7 +291,9 @@ alter table lead_magnets add column if not exists company_id uuid references com
 alter table website_scorecards add column if not exists company_id uuid references companies(id) on delete cascade;
 
 -- Enable RLS
+alter table user_profiles enable row level security;
 alter table companies enable row level security;
+alter table company_members enable row level security;
 alter table company_knowledge enable row level security;
 alter table saved_marketing_content enable row level security;
 alter table website_reviews enable row level security;
@@ -264,7 +305,59 @@ alter table lead_magnets enable row level security;
 alter table website_scorecards enable row level security;
 ```
 
-For internal use, configure Row Level Security policies to allow the intended reads and writes with your anon key. For public production, add authentication and stricter policies before launch.
+Use the complete [supabase-schema.sql](./supabase-schema.sql), not only the abbreviated snippet above, because the file includes all `created_by` columns and RLS policies.
+
+## First Admin User
+
+1. Create or invite the first user from Supabase Auth.
+2. Log in once so the app creates a `user_profiles` row.
+3. In the Supabase SQL editor, promote that user:
+
+```sql
+update user_profiles
+set role = 'admin'
+where email = 'admin@example.com';
+```
+
+Admins can read, update, and delete all companies and saved records through RLS policies.
+
+## Supabase Auth Redirect URLs
+
+In Supabase dashboard, go to Authentication > URL Configuration.
+
+Set Site URL to the production app URL.
+
+Add redirect URLs:
+
+```text
+http://localhost:3000
+http://localhost:3000/**
+https://YOUR-VERCEL-DOMAIN.vercel.app
+https://YOUR-VERCEL-DOMAIN.vercel.app/**
+https://YOUR-CUSTOM-DOMAIN.com
+https://YOUR-CUSTOM-DOMAIN.com/**
+```
+
+Email confirmation redirects to:
+
+```text
+http://localhost:3000/auth/callback
+```
+
+Password reset redirects to:
+
+```text
+http://localhost:3000/reset-password
+```
+
+## Data Access Rules
+
+- Normal users see companies they own, companies where they are in `company_members`, and companies marked `public_demo`.
+- New companies are created with `owner_id = auth.uid()` and `visibility = 'private'`.
+- Viewers can read company data but cannot edit/delete unless promoted to `editor` or `owner`.
+- Admins can manage all data.
+- Anonymous users cannot read or write company data.
+- Never expose a Supabase service role key in the frontend. This app uses the anon key with RLS and user access tokens.
 
 ## Prompt Structure
 

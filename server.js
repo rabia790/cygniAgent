@@ -1,10 +1,31 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const { AsyncLocalStorage } = require("async_hooks");
+const { randomUUID } = require("crypto");
 
 const PUBLIC_DIR = path.join(__dirname, "public");
+const LOCAL_COMPANIES_PATH = path.join(__dirname, "data", "companies.json");
+const requestStore = new AsyncLocalStorage();
 
 const PORT = Number(process.env.PORT || 3000);
+
+loadEnvFile(".env");
+loadEnvFile(".env.local");
+
+function loadEnvFile(fileName) {
+  const filePath = path.join(__dirname, fileName);
+  if (!fs.existsSync(filePath)) return;
+  const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/);
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("=")) return;
+    const index = trimmed.indexOf("=");
+    const key = trimmed.slice(0, index).trim();
+    const value = trimmed.slice(index + 1).trim().replace(/^["']|["']$/g, "");
+    if (key && process.env[key] === undefined) process.env[key] = value;
+  });
+}
 
 function getSupabaseConfig() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -12,16 +33,72 @@ function getSupabaseConfig() {
   return { url, key, isConfigured: Boolean(url && key) };
 }
 
-function getSupabaseClient() {
+function getSupabaseClient(authToken = requestStore.getStore()?.authToken || "") {
   const { url, key, isConfigured } = getSupabaseConfig();
   if (!isConfigured) return null;
 
   const { createClient } = require("@supabase/supabase-js");
-  return createClient(url, key);
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: authToken ? { headers: { Authorization: `Bearer ${authToken}` } } : undefined,
+  });
 }
 
 function getSupabaseMissingMessage() {
   return "Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to enable database storage.";
+}
+
+function getCurrentUser() {
+  return requestStore.getStore()?.user || null;
+}
+
+function getCurrentProfile() {
+  return requestStore.getStore()?.profile || null;
+}
+
+function sendUnauthorized(res) {
+  sendJson(res, 401, { error: "Please log in before using CygniSoft AI Agent." });
+}
+
+async function authenticateRequest(req) {
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+  if (!token) return { authenticated: false, error: "Missing authorization token." };
+  const supabase = getSupabaseClient();
+  if (!supabase) return { authenticated: false, error: getSupabaseMissingMessage() };
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data?.user) return { authenticated: false, error: "Invalid or expired session." };
+  const userClient = getSupabaseClient(token);
+  const profile = await ensureUserProfile(userClient, data.user);
+  return { authenticated: true, authToken: token, user: data.user, profile };
+}
+
+async function ensureUserProfile(supabase, user) {
+  const email = user.email || "";
+  const { data, error: selectError } = await supabase.from("user_profiles").select("*").eq("id", user.id).maybeSingle();
+  if (data) return data;
+  const { data: inserted, error: insertError } = await supabase
+    .from("user_profiles")
+    .insert({ id: user.id, email, role: "user" })
+    .select()
+    .maybeSingle();
+  if (selectError || insertError) {
+    console.warn("User profile fallback:", selectError?.message || insertError?.message);
+  }
+  return inserted || { id: user.id, email, role: "user" };
+}
+
+async function handleAuthConfig(_req, res) {
+  const { url, key, isConfigured } = getSupabaseConfig();
+  sendJson(res, 200, {
+    supabaseConfigured: isConfigured,
+    supabaseUrl: url || "",
+    supabaseAnonKey: key || "",
+  });
+}
+
+async function handleMe(_req, res) {
+  sendJson(res, 200, { user: getCurrentUser(), profile: getCurrentProfile(), isAdmin: getCurrentProfile()?.role === "admin" });
 }
 
 const defaultCompanyProfile = {
@@ -34,6 +111,7 @@ const defaultCompanyProfile = {
   brand_tone: "Professional, clear, confident, friendly, simple, and not too salesy",
   competitors: [],
   notes: "Default example company profile for CygniSoft AI Agent.",
+  visibility: "public_demo",
   profile: {
     output: `Company Overview
 CygniSoft is both a staffing solutions and software solutions company.
@@ -1045,25 +1123,32 @@ async function handleBuildKnowledge(req, res) {
     }
 
     profile.output = formatCompanyKnowledgeProfile(profile);
+    const targetCompanyId = companyId || selectedCompany?.id || null;
     const saveResult = await saveCompanyKnowledge({
       companyName: selectedCompany?.company_name || "Company",
       websiteUrls: successfulPages.map((page) => page.url),
       profile,
-      companyId: companyId || selectedCompany?.id || null,
+      companyId: targetCompanyId,
+      createdBy: getCurrentUser()?.id || null,
     });
-    if ((companyId || selectedCompany?.id) && !saveResult.error) {
-      await updateCompany(companyId || selectedCompany.id, {
+    let companyUpdateResult = null;
+    if (targetCompanyId) {
+      companyUpdateResult = await updateCompany(targetCompanyId, {
         website_urls: selectedCompany?.website_urls?.length ? selectedCompany.website_urls : successfulPages.map((page) => page.url),
         profile,
       });
     }
+    const savedToKnowledge = Boolean(saveResult.data && !saveResult.error);
+    const savedToCompany = Boolean(companyUpdateResult?.data && !companyUpdateResult.error);
+    const saveError = savedToKnowledge || savedToCompany ? null : saveResult.error || companyUpdateResult?.error || null;
     sendJson(res, 200, {
       profile,
       output: profile.output,
       pages,
-      saved: Boolean(saveResult.data && !saveResult.error),
-      saveError: saveResult.error,
-      supabaseConfigured: saveResult.configured,
+      saved: savedToKnowledge || savedToCompany,
+      saveError,
+      supabaseConfigured: Boolean(saveResult.configured && (companyUpdateResult ? companyUpdateResult.configured : true)),
+      localFallback: saveResult.localFallback || companyUpdateResult?.localFallback || false,
     });
   } catch (error) {
     console.error(error);
@@ -1121,6 +1206,7 @@ async function handleUpdateCompanyProfile(req, res) {
           websiteUrls: selectedCompany?.website_urls || [],
           profile,
           companyId: targetCompanyId,
+          createdBy: getCurrentUser()?.id || null,
         });
 
     if (result.error) {
@@ -1185,6 +1271,7 @@ async function handleWebsiteReview(req, res) {
     const saveResult = await saveWebsiteReview({
       website_url: page.url,
       company_id: payload.companyId || payload.selectedCompany?.id || null,
+      created_by: getCurrentUser()?.id || null,
       business_focus: companyProfile ? "Selected company profile" : "General company context",
       review_output: output,
     });
@@ -1254,6 +1341,7 @@ async function handleCompetitorReview(req, res) {
     const saveResult = await saveCompetitorReview({
       company_url: cygniUrls[0] || "",
       company_id: payload.companyId || payload.selectedCompany?.id || null,
+      created_by: getCurrentUser()?.id || null,
       competitor_urls: compUrls,
       business_focus: companyProfile ? "Selected company profile" : "Fetched company URLs",
       review_output: output,
@@ -1311,6 +1399,8 @@ async function handleMarketTrends(req, res) {
     const output = aiOutput || buildMarketTrendsFallback(cleanPayload, companyProfile);
     const saveResult = await saveMarketTrend({
       industry,
+      company_id: payload.companyId || payload.selectedCompany?.id || null,
+      created_by: getCurrentUser()?.id || null,
       region: cleanPayload.region,
       research_focus: researchFocus,
       notes: cleanPayload.notes,
@@ -1380,6 +1470,7 @@ async function handleLeadCampaignPlan(req, res) {
     const saveResult = await saveCampaignPlan({
       service_product: service,
       company_id: payload.companyId || payload.selectedCompany?.id || null,
+      created_by: getCurrentUser()?.id || null,
       target_audience: targetAudience,
       region: cleanPayload.region,
       campaign_goal: campaignGoal,
@@ -1429,6 +1520,7 @@ async function handleSaveMarketingContent(req, res) {
     const result = await saveMarketingContent({
       title: String(title || `${contentType || "Marketing Content"} - ${businessCategory || "Selected Company"}`).trim(),
       company_id: companyId || null,
+      created_by: getCurrentUser()?.id || null,
       content_type: contentType || "",
       business_category: businessCategory || "",
       target_audience: targetAudience || "",
@@ -1516,27 +1608,53 @@ async function handleDeleteMarketingContent(_req, res, id) {
 
 async function handleListCompanies(_req, res) {
   try {
+    console.log("[companies] current user id for fetch:", getCurrentUser()?.id || "unknown");
     const result = await listCompanies();
+    console.log("[companies] fetch companies response:", {
+      count: result.data?.length || 0,
+      configured: result.configured,
+      error: result.error || null,
+    });
+    if (result.error) {
+      sendJson(res, result.configured ? 500 : 503, { companies: [], supabaseConfigured: result.configured, error: result.error });
+      return;
+    }
     sendJson(res, 200, { companies: result.data || [], supabaseConfigured: result.configured, error: result.error });
   } catch (error) {
+    console.error("[companies] fetch companies error:", error);
     console.error(error);
-    sendJson(res, 500, { error: error.message || "Unable to load companies.", companies: [defaultCompanyProfile] });
+    sendJson(res, 500, { error: error.message || "Unable to load companies.", companies: [] });
   }
 }
 
 async function handleCreateCompany(req, res) {
   try {
     const payload = normalizeCompanyPayload(JSON.parse((await readBody(req)) || "{}"));
+    const user = getCurrentUser();
     if (!payload.company_name) {
       sendJson(res, 400, { error: "Company name is required." });
       return;
     }
+    if (!user?.id) {
+      sendJson(res, 401, { error: "Please log in before creating a company profile." });
+      return;
+    }
+    payload.owner_id = user?.id || null;
+    payload.visibility = "private";
+    console.log("[companies] current user id for insert:", user.id);
     const result = await createCompany(payload);
+    console.log("[companies] company insert response:", {
+      id: result.data?.id || null,
+      owner_id: result.data?.owner_id || null,
+      configured: result.configured,
+      error: result.error || null,
+    });
     if (result.error) {
+      console.error("[companies] company insert error:", result.error);
       sendJson(res, result.configured ? 500 : 503, { error: result.error, supabaseConfigured: result.configured });
       return;
     }
-    sendJson(res, 200, { company: result.data, supabaseConfigured: true });
+    sendJson(res, 200, { company: result.data, supabaseConfigured: result.configured, localFallback: result.localFallback || false, dbError: result.dbError || null });
   } catch (error) {
     console.error(error);
     sendJson(res, 500, { error: error.message || "Unable to create company." });
@@ -1547,11 +1665,16 @@ async function handleUpdateCompany(req, res, id) {
   try {
     const payload = normalizeCompanyPayload(JSON.parse((await readBody(req)) || "{}"));
     const result = await updateCompany(id, payload);
+    console.log("[companies] company update response:", {
+      id: result.data?.id || id,
+      configured: result.configured,
+      error: result.error || null,
+    });
     if (result.error) {
       sendJson(res, result.configured ? 500 : 503, { error: result.error, supabaseConfigured: result.configured });
       return;
     }
-    sendJson(res, 200, { company: result.data, supabaseConfigured: true });
+    sendJson(res, 200, { company: result.data, supabaseConfigured: result.configured, localFallback: result.localFallback || false, dbError: result.dbError || null });
   } catch (error) {
     console.error(error);
     sendJson(res, 500, { error: error.message || "Unable to update company." });
@@ -1565,7 +1688,7 @@ async function handleDeleteCompany(_req, res, id) {
       sendJson(res, result.configured ? 500 : 503, { error: result.error, supabaseConfigured: result.configured });
       return;
     }
-    sendJson(res, 200, { deleted: true, company: result.data });
+    sendJson(res, 200, { deleted: true, company: result.data, supabaseConfigured: result.configured, localFallback: result.localFallback || false, dbError: result.dbError || null });
   } catch (error) {
     console.error(error);
     sendJson(res, 500, { error: error.message || "Unable to delete company." });
@@ -1584,6 +1707,7 @@ function normalizeCompanyPayload(payload) {
     competitors: normalizeArray(payload.competitors),
     notes: String(payload.notes || "").trim(),
     profile: payload.profile || {},
+    visibility: ["private", "shared", "public_demo"].includes(payload.visibility) ? payload.visibility : "private",
   };
 }
 
@@ -2220,7 +2344,7 @@ function getCompanyProfileFromPayload(payload) {
   };
 }
 
-async function saveCompanyKnowledge({ companyName = "Company", websiteUrls = [], profile, companyId = null }) {
+async function saveCompanyKnowledge({ companyName = "Company", websiteUrls = [], profile, companyId = null, createdBy = null }) {
   const supabase = getSupabaseClient();
   if (!supabase) return { data: null, error: getSupabaseMissingMessage(), configured: false };
 
@@ -2230,6 +2354,7 @@ async function saveCompanyKnowledge({ companyName = "Company", websiteUrls = [],
     .insert({
       company_name: companyName,
       company_id: companyId,
+      created_by: createdBy,
       website_urls: websiteUrls,
       profile,
       created_at: now,
@@ -2340,15 +2465,16 @@ async function insertSupabaseRow(table, payload) {
 
 async function listCompanies() {
   const supabase = getSupabaseClient();
-  if (!supabase) return { data: [defaultCompanyProfile], error: getSupabaseMissingMessage(), configured: false };
+  if (!supabase) return listLocalCompanies(getCurrentUser()?.id);
 
   const { data, error } = await supabase.from("companies").select("*").order("updated_at", { ascending: false });
-  return { data: data?.length ? data : [defaultCompanyProfile], error: error?.message || null, configured: true };
+  if (isMissingSupabaseTableError(error?.message)) return listLocalCompanies(getCurrentUser()?.id, error?.message);
+  return { data: data || [], error: error?.message || null, configured: true };
 }
 
 async function createCompany(payload) {
   const supabase = getSupabaseClient();
-  if (!supabase) return { data: null, error: getSupabaseMissingMessage(), configured: false };
+  if (!supabase) return createLocalCompany(payload, getSupabaseMissingMessage());
 
   const now = new Date().toISOString();
   const { data, error } = await supabase
@@ -2356,12 +2482,19 @@ async function createCompany(payload) {
     .insert({ ...payload, created_at: now, updated_at: now })
     .select()
     .single();
+  if (data?.id && payload.owner_id) {
+    const { error: memberError } = await supabase
+      .from("company_members")
+      .upsert({ company_id: data.id, user_id: payload.owner_id, role: "owner" }, { onConflict: "company_id,user_id" });
+    if (memberError) console.error("[companies] owner membership insert error:", memberError.message);
+  }
+  if (isMissingSupabaseTableError(error?.message)) return createLocalCompany(payload, error?.message);
   return { data, error: error?.message || null, configured: true };
 }
 
 async function updateCompany(id, payload) {
   const supabase = getSupabaseClient();
-  if (!supabase) return { data: null, error: getSupabaseMissingMessage(), configured: false };
+  if (!supabase) return updateLocalCompany(id, payload, getSupabaseMissingMessage());
 
   const { data, error } = await supabase
     .from("companies")
@@ -2369,15 +2502,77 @@ async function updateCompany(id, payload) {
     .eq("id", id)
     .select()
     .single();
+  if (isMissingSupabaseTableError(error?.message)) return updateLocalCompany(id, payload, error?.message);
   return { data, error: error?.message || null, configured: true };
 }
 
 async function deleteCompany(id) {
   const supabase = getSupabaseClient();
-  if (!supabase) return { data: null, error: getSupabaseMissingMessage(), configured: false };
+  if (!supabase) return deleteLocalCompany(id, getSupabaseMissingMessage());
 
   const { data, error } = await supabase.from("companies").delete().eq("id", id).select().single();
+  if (isMissingSupabaseTableError(error?.message)) return deleteLocalCompany(id, error?.message);
   return { data, error: error?.message || null, configured: true };
+}
+
+function isMissingSupabaseTableError(message = "") {
+  return /PGRST205|schema cache|Could not find the table|relation .* does not exist/i.test(String(message));
+}
+
+function readLocalCompanies() {
+  try {
+    if (!fs.existsSync(LOCAL_COMPANIES_PATH)) return [];
+    const parsed = JSON.parse(fs.readFileSync(LOCAL_COMPANIES_PATH, "utf8"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error("[companies] local company read error:", error.message);
+    return [];
+  }
+}
+
+function writeLocalCompanies(companies) {
+  fs.mkdirSync(path.dirname(LOCAL_COMPANIES_PATH), { recursive: true });
+  fs.writeFileSync(LOCAL_COMPANIES_PATH, JSON.stringify(companies, null, 2));
+}
+
+function listLocalCompanies(userId = "", dbError = null) {
+  const companies = readLocalCompanies()
+    .filter((company) => company.visibility === "public_demo" || !userId || company.owner_id === userId)
+    .sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")));
+  return { data: companies, error: null, configured: false, localFallback: true, dbError };
+}
+
+function createLocalCompany(payload, dbError = null) {
+  const now = new Date().toISOString();
+  const company = {
+    ...payload,
+    id: `fallback-${randomUUID()}`,
+    visibility: payload.visibility || "private",
+    created_at: now,
+    updated_at: now,
+  };
+  const companies = readLocalCompanies();
+  companies.push(company);
+  writeLocalCompanies(companies);
+  return { data: company, error: null, configured: false, localFallback: true, dbError };
+}
+
+function updateLocalCompany(id, payload, dbError = null) {
+  const companies = readLocalCompanies();
+  const index = companies.findIndex((company) => company.id === id);
+  if (index === -1) return { data: null, error: "Local company profile was not found.", configured: false, localFallback: true, dbError };
+  companies[index] = { ...companies[index], ...payload, id, updated_at: new Date().toISOString() };
+  writeLocalCompanies(companies);
+  return { data: companies[index], error: null, configured: false, localFallback: true, dbError };
+}
+
+function deleteLocalCompany(id, dbError = null) {
+  const companies = readLocalCompanies();
+  const index = companies.findIndex((company) => company.id === id);
+  if (index === -1) return { data: null, error: "Local company profile was not found.", configured: false, localFallback: true, dbError };
+  const [deleted] = companies.splice(index, 1);
+  writeLocalCompanies(companies);
+  return { data: deleted, error: null, configured: false, localFallback: true, dbError };
 }
 
 async function updateMarketingContentStatus(id, status) {
@@ -2926,8 +3121,50 @@ async function handleGenerate(req, res) {
   }
 }
 
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+
+  if (req.method === "GET" && url.pathname === "/api/auth/config") {
+    handleAuthConfig(req, res);
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/auth/callback") {
+    serveFile(res, path.join(PUBLIC_DIR, "auth-callback.html"));
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/reset-password") {
+    serveFile(res, path.join(PUBLIC_DIR, "reset-password.html"));
+    return;
+  }
+
+  if (url.pathname.startsWith("/api/")) {
+    const auth = await authenticateRequest(req);
+    if (!auth.authenticated) {
+      sendUnauthorized(res);
+      return;
+    }
+    requestStore.run({ authToken: auth.authToken, user: auth.user, profile: auth.profile }, () => {
+      routeApiRequest(req, res, url);
+    });
+    return;
+  }
+
+  if (req.method === "GET") {
+    serveStatic(req, res);
+    return;
+  }
+
+  res.writeHead(405);
+  res.end("Method not allowed");
+});
+
+function routeApiRequest(req, res, url) {
+  if (req.method === "GET" && url.pathname === "/api/me") {
+    handleMe(req, res);
+    return;
+  }
 
   if (req.method === "POST" && req.url === "/api/generate") {
     handleGenerate(req, res);
@@ -3014,14 +3251,21 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (req.method === "GET") {
-    serveStatic(req, res);
-    return;
-  }
-
   res.writeHead(405);
   res.end("Method not allowed");
-});
+}
+
+function serveFile(res, filePath) {
+  fs.readFile(filePath, (err, data) => {
+    if (err) {
+      res.writeHead(404);
+      res.end("Not found");
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(data);
+  });
+}
 
 server.listen(PORT, () => {
   console.log(`CygniSoft AI Agent running at http://localhost:${PORT}`);

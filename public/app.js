@@ -1,3 +1,4 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   BUSINESS_CATEGORIES,
   CAMPAIGN_DURATIONS,
@@ -12,6 +13,28 @@ import {
   TARGET_AUDIENCES,
   VARIATION_COUNTS,
 } from "./constants.js";
+
+const authView = document.querySelector("#authView");
+const appShell = document.querySelector("#appShell");
+const authForm = document.querySelector("#authForm");
+const authIntro = document.querySelector("#authIntro");
+const authMessage = document.querySelector("#authMessage");
+const authMessageText = document.querySelector("#authMessageText");
+const resendConfirmationButton = document.querySelector("#resendConfirmationButton");
+const goToSignInButton = document.querySelector("#goToSignInButton");
+const signInModeButton = document.querySelector("#signInModeButton");
+const signUpModeButton = document.querySelector("#signUpModeButton");
+const forgotModeButton = document.querySelector("#forgotModeButton");
+const authEmail = document.querySelector("#authEmail");
+const authPassword = document.querySelector("#authPassword");
+const confirmPasswordLabel = document.querySelector("#confirmPasswordLabel");
+const authConfirmPassword = document.querySelector("#authConfirmPassword");
+const authSubmitButton = document.querySelector("#authSubmitButton");
+const forgotPasswordButton = document.querySelector("#forgotPasswordButton");
+const authStatus = document.querySelector("#authStatus");
+const userEmail = document.querySelector("#userEmail");
+const adminBadge = document.querySelector("#adminBadge");
+const logoutButton = document.querySelector("#logoutButton");
 
 const form = document.querySelector("#generatorForm");
 const contentTypeSelect = document.querySelector("#contentType");
@@ -110,6 +133,7 @@ const createCompanyButton = document.querySelector("#createCompanyButton");
 const editCompanyButton = document.querySelector("#editCompanyButton");
 const deleteCompanyButton = document.querySelector("#deleteCompanyButton");
 const selectedCompanyBadge = document.querySelector("#selectedCompanyBadge");
+const companyVisibilityBadge = document.querySelector("#companyVisibilityBadge");
 const companyForm = document.querySelector("#companyForm");
 const companyNameInput = document.querySelector("#companyNameInput");
 const companyIndustryInput = document.querySelector("#companyIndustryInput");
@@ -119,6 +143,7 @@ const companyProductsInput = document.querySelector("#companyProductsInput");
 const companyAudienceInput = document.querySelector("#companyAudienceInput");
 const companyCompetitorsInput = document.querySelector("#companyCompetitorsInput");
 const companyToneInput = document.querySelector("#companyToneInput");
+const companyVisibilityInput = document.querySelector("#companyVisibilityInput");
 const companyNotesInput = document.querySelector("#companyNotesInput");
 const saveCompanyButton = document.querySelector("#saveCompanyButton");
 const cancelCompanyButton = document.querySelector("#cancelCompanyButton");
@@ -132,6 +157,19 @@ let companies = [];
 let selectedCompany = null;
 let editingCompanyId = "";
 let lastGenerationMeta = null;
+let supabaseAuth = null;
+let currentSession = null;
+let currentUserProfile = null;
+let authConfigError = "";
+let authMode = "signin";
+let pendingConfirmationEmail = "";
+let authMessageState = { type: "info", message: "" };
+let resetEmailCooldownTimer = null;
+let resetEmailCooldownRemaining = 0;
+let resetEmailRequestInFlight = false;
+let resendConfirmationCooldownTimer = null;
+let resendConfirmationCooldownRemaining = 0;
+let resendConfirmationRequestInFlight = false;
 
 function fillSelect(select, values) {
   values.forEach((value) => {
@@ -161,6 +199,351 @@ function setLoading(button, isLoading, loadingText, idleText) {
   button.querySelector(".spinner").hidden = !isLoading;
 }
 
+function isEmailRateLimitError(error) {
+  return /rate limit|too many|email rate/i.test(error?.message || "");
+}
+
+function getFriendlyAuthError(error) {
+  if (isEmailRateLimitError(error)) {
+    return "Too many email requests. Please wait a few minutes before trying again.";
+  }
+  return error?.message || "Something went wrong. Please try again.";
+}
+
+function setResendConfirmationButtonLoading(isLoading) {
+  resendConfirmationButton.disabled = isLoading;
+  resendConfirmationButton.textContent = isLoading ? "Sending..." : "Resend confirmation email";
+}
+
+function startResetEmailCooldown(seconds = 60) {
+  clearInterval(resetEmailCooldownTimer);
+  resetEmailCooldownRemaining = seconds;
+  authSubmitButton.disabled = true;
+  authSubmitButton.querySelector(".spinner").hidden = true;
+  authSubmitButton.querySelector(".button-text").textContent = `Send Reset Email (${resetEmailCooldownRemaining}s)`;
+  resetEmailCooldownTimer = setInterval(() => {
+    resetEmailCooldownRemaining -= 1;
+    if (resetEmailCooldownRemaining <= 0) {
+      clearInterval(resetEmailCooldownTimer);
+      resetEmailCooldownTimer = null;
+      resetEmailCooldownRemaining = 0;
+      if (authMode === "forgot") {
+        authSubmitButton.disabled = false;
+        authSubmitButton.querySelector(".button-text").textContent = "Send Reset Email";
+      }
+      return;
+    }
+    if (authMode === "forgot") {
+      authSubmitButton.disabled = true;
+      authSubmitButton.querySelector(".button-text").textContent = `Send Reset Email (${resetEmailCooldownRemaining}s)`;
+    }
+  }, 1000);
+}
+
+function startResendConfirmationCooldown(seconds = 60) {
+  clearInterval(resendConfirmationCooldownTimer);
+  resendConfirmationCooldownRemaining = seconds;
+  resendConfirmationButton.disabled = true;
+  resendConfirmationButton.textContent = `Resend confirmation email (${resendConfirmationCooldownRemaining}s)`;
+  resendConfirmationCooldownTimer = setInterval(() => {
+    resendConfirmationCooldownRemaining -= 1;
+    if (resendConfirmationCooldownRemaining <= 0) {
+      clearInterval(resendConfirmationCooldownTimer);
+      resendConfirmationCooldownTimer = null;
+      resendConfirmationCooldownRemaining = 0;
+      resendConfirmationButton.disabled = false;
+      resendConfirmationButton.textContent = "Resend confirmation email";
+      return;
+    }
+    resendConfirmationButton.disabled = true;
+    resendConfirmationButton.textContent = `Resend confirmation email (${resendConfirmationCooldownRemaining}s)`;
+  }, 1000);
+}
+
+function authHeaders(extra = {}) {
+  return {
+    ...extra,
+    ...(currentSession?.access_token ? { Authorization: `Bearer ${currentSession.access_token}` } : {}),
+  };
+}
+
+async function initializeAuth() {
+  try {
+    const response = await fetch("/api/auth/config");
+    const config = await response.json();
+    if (!config.supabaseConfigured) {
+      authConfigError = "Supabase is not configured. Add Supabase env variables before logging in.";
+      setAuthMessage({ type: "error", message: authConfigError });
+      return;
+    }
+    authConfigError = "";
+    supabaseAuth = createClient(config.supabaseUrl, config.supabaseAnonKey);
+    const { data } = await supabaseAuth.auth.getSession();
+    currentSession = data.session;
+    supabaseAuth.auth.onAuthStateChange((_event, session) => {
+      currentSession = session;
+      handleSessionChange();
+    });
+    await handleSessionChange();
+  } catch (error) {
+    authConfigError = `Auth setup could not load: ${error.message}`;
+    setAuthMessage({ type: "error", message: authConfigError });
+  }
+}
+
+function requireAuthClient() {
+  if (supabaseAuth) return true;
+  setAuthMessage({
+    type: "error",
+    message: authConfigError || "Supabase Auth is not ready yet. Check the Supabase environment variables.",
+  });
+  return false;
+}
+
+function setAuthMessage({ type = "info", message = "", showResend = false, showGoToSignIn = false } = {}) {
+  authMessageState = { type, message };
+  if (!message) {
+    authMessage.hidden = true;
+    authMessageText.textContent = "";
+    resendConfirmationButton.hidden = true;
+    goToSignInButton.hidden = true;
+    return;
+  }
+  authMessage.hidden = false;
+  authMessage.dataset.type = type;
+  authMessageText.textContent = message;
+  resendConfirmationButton.hidden = !showResend;
+  if (showResend && resendConfirmationCooldownRemaining > 0) {
+    resendConfirmationButton.disabled = true;
+    resendConfirmationButton.textContent = `Resend confirmation email (${resendConfirmationCooldownRemaining}s)`;
+  }
+  goToSignInButton.hidden = !showGoToSignIn;
+}
+
+function setAuthMode(mode, { preserveMessage = false } = {}) {
+  authMode = mode;
+  const isSignIn = mode === "signin";
+  const isSignUp = mode === "signup";
+  const isForgot = mode === "forgot";
+  signInModeButton.classList.toggle("is-active", isSignIn);
+  signUpModeButton.classList.toggle("is-active", isSignUp);
+  forgotModeButton.classList.toggle("is-active", isForgot);
+  authIntro.textContent = isSignUp ? "Create your account." : isForgot ? "Reset your password." : "Sign in to your workspace.";
+  authPassword.parentElement.hidden = isForgot;
+  confirmPasswordLabel.hidden = !isSignUp;
+  forgotPasswordButton.hidden = !isSignIn;
+  authSubmitButton.querySelector(".button-text").textContent = isSignUp ? "Sign Up" : isForgot ? "Send Reset Email" : "Sign In";
+  if (isForgot && resetEmailCooldownRemaining > 0) {
+    authSubmitButton.disabled = true;
+    authSubmitButton.querySelector(".button-text").textContent = `Send Reset Email (${resetEmailCooldownRemaining}s)`;
+  } else if (!isForgot || resetEmailCooldownRemaining <= 0) {
+    authSubmitButton.disabled = false;
+  }
+  authPassword.autocomplete = isSignUp ? "new-password" : "current-password";
+  setStatus(authStatus, "", "neutral");
+  if (!preserveMessage) setAuthMessage();
+}
+
+function validateAuthForm() {
+  const email = authEmail.value.trim();
+  const password = authPassword.value;
+  const confirmPassword = authConfirmPassword.value;
+  if (!email) return "Email is required.";
+  if (authMode === "forgot") return "";
+  if (!password) return "Password is required.";
+  if (password.length < 6) return "Password must be at least 6 characters.";
+  if (authMode === "signup" && !confirmPassword) return "Confirm password is required.";
+  if (authMode === "signup" && password !== confirmPassword) return "Password and confirm password must match.";
+  return "";
+}
+
+async function handleSessionChange() {
+  if (!currentSession) {
+    appShell.hidden = true;
+    authView.hidden = false;
+    currentUserProfile = null;
+    return;
+  }
+  authView.hidden = true;
+  appShell.hidden = false;
+  try {
+    console.log("[auth] current user id after login:", currentSession.user?.id || "unknown");
+    await loadCurrentUser();
+    await fetchUserCompanies(currentSession.user?.id);
+  } catch (error) {
+    userEmail.textContent = currentSession.user?.email || "Signed in";
+    adminBadge.hidden = true;
+    setStatus(companyStatus, `Dashboard opened, but account data could not be loaded: ${error.message}`, "error");
+    await fetchUserCompanies(currentSession.user?.id);
+  }
+}
+
+async function loadCurrentUser() {
+  const response = await fetch("/api/me", { headers: authHeaders() });
+  const data = await response.json();
+  if (!response.ok) {
+    setStatus(authStatus, data.error || "Unable to load your account.", "error");
+    throw new Error(data.error || "Unable to load your account.");
+  }
+  currentUserProfile = data.profile;
+  userEmail.textContent = data.user?.email || currentSession.user?.email || "Signed in";
+  adminBadge.hidden = !data.isAdmin;
+}
+
+async function handleAuthSubmit(event) {
+  event.preventDefault();
+  if (!requireAuthClient()) return;
+  const validationError = validateAuthForm();
+  if (validationError) {
+    setAuthMessage({ type: "error", message: validationError });
+    return;
+  }
+  if (authMode === "signup") {
+    await signUpWithPassword();
+    return;
+  }
+  if (authMode === "forgot") {
+    await sendPasswordReset();
+    return;
+  }
+  await signInWithPassword();
+}
+
+async function signInWithPassword() {
+  const email = authEmail.value.trim();
+  setLoading(authSubmitButton, true, "Signing in...", "Sign In");
+  setAuthMessage({ type: "info", message: "Signing in..." });
+  const { data, error } = await supabaseAuth.auth.signInWithPassword({
+    email,
+    password: authPassword.value,
+  });
+  setLoading(authSubmitButton, false, "Signing in...", "Sign In");
+  if (error) {
+    if (/confirm|verified|email/i.test(error.message)) {
+      pendingConfirmationEmail = email;
+      setAuthMessage({
+        type: "error",
+        message: "Your account exists, but your email is not confirmed yet. Please check your inbox and click the confirmation link.",
+        showResend: true,
+      });
+      return;
+    }
+    setAuthMessage({ type: "error", message: error.message });
+    return;
+  }
+  if (!data.session) {
+    pendingConfirmationEmail = email;
+    setAuthMessage({
+      type: "error",
+      message: "Please confirm your email before signing in. Check your inbox for the confirmation link.",
+      showResend: true,
+    });
+    return;
+  }
+  currentSession = data.session;
+  setAuthMessage({ type: "success", message: "Logged in. Opening dashboard..." });
+  await handleSessionChange();
+}
+
+async function signUpWithPassword() {
+  const email = authEmail.value.trim();
+  setLoading(authSubmitButton, true, "Creating account...", "Sign Up");
+  setAuthMessage({ type: "info", message: "Creating account..." });
+  const { data, error } = await supabaseAuth.auth.signUp({
+    email,
+    password: authPassword.value,
+    options: {
+      emailRedirectTo: `${window.location.origin}/auth/callback`,
+    },
+  });
+  setLoading(authSubmitButton, false, "Creating account...", "Sign Up");
+  if (error) {
+    setAuthMessage({ type: "error", message: error.message });
+    return;
+  }
+  if (data?.session) {
+    await supabaseAuth.auth.signOut();
+    currentSession = null;
+  }
+  pendingConfirmationEmail = email;
+  setAuthMode("signin", { preserveMessage: true });
+  setAuthMessage({
+    type: "success",
+    message: `Account created successfully. Please check your email to confirm your account before signing in. We sent a confirmation link to ${email}.`,
+    showResend: true,
+  });
+  authPassword.value = "";
+  authConfirmPassword.value = "";
+}
+
+async function sendPasswordReset() {
+  if (resetEmailCooldownRemaining > 0 || resetEmailRequestInFlight) return;
+  resetEmailRequestInFlight = true;
+  setLoading(authSubmitButton, true, "Sending...", "Send Reset Email");
+  setAuthMessage({ type: "info", message: "Sending..." });
+  let error = null;
+  try {
+    ({ error } = await supabaseAuth.auth.resetPasswordForEmail(authEmail.value.trim(), {
+      redirectTo: `${window.location.origin}/reset-password`,
+    }));
+  } catch (requestError) {
+    error = requestError;
+  } finally {
+    resetEmailRequestInFlight = false;
+    setLoading(authSubmitButton, false, "Sending...", "Send Reset Email");
+  }
+  if (error) {
+    if (isEmailRateLimitError(error)) startResetEmailCooldown();
+    setAuthMessage({ type: "error", message: getFriendlyAuthError(error) });
+    return;
+  }
+  setAuthMessage({ type: "success", message: "Email sent. Please check your inbox and spam folder." });
+  startResetEmailCooldown();
+}
+
+async function sendForgotPasswordFromSignIn() {
+  setAuthMode("forgot");
+  if (authEmail.value.trim()) {
+    await sendPasswordReset();
+  }
+}
+
+async function resendConfirmationEmail() {
+  if (!requireAuthClient()) return;
+  if (resendConfirmationCooldownRemaining > 0 || resendConfirmationRequestInFlight) return;
+  const email = pendingConfirmationEmail || authEmail.value.trim();
+  if (!email) {
+    setAuthMessage({ type: "error", message: "Enter your email so we can resend the confirmation link." });
+    return;
+  }
+  resendConfirmationRequestInFlight = true;
+  setResendConfirmationButtonLoading(true);
+  let error = null;
+  try {
+    ({ error } = await supabaseAuth.auth.resend({ type: "signup", email }));
+  } catch (requestError) {
+    error = requestError;
+  } finally {
+    resendConfirmationRequestInFlight = false;
+    setResendConfirmationButtonLoading(false);
+  }
+  if (error) {
+    if (isEmailRateLimitError(error)) startResendConfirmationCooldown();
+    setAuthMessage({ type: "error", message: getFriendlyAuthError(error), showResend: true });
+    return;
+  }
+  setAuthMessage({
+    type: "success",
+    message: "Email sent. Please check your inbox and spam folder.",
+    showResend: true,
+  });
+  startResendConfirmationCooldown();
+}
+
+async function logout() {
+  if (supabaseAuth) await supabaseAuth.auth.signOut();
+}
+
 function validateRequest() {
   const request = userRequestInput.value.trim();
   if (!request) {
@@ -181,7 +564,7 @@ function validateRequest() {
 async function postJson(url, payload) {
   const response = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
   });
   const data = await response.json();
@@ -196,7 +579,7 @@ async function postJson(url, payload) {
 async function patchJson(url, payload) {
   const response = await fetch(url, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
   });
   const data = await response.json();
@@ -205,7 +588,7 @@ async function patchJson(url, payload) {
 }
 
 async function deleteJson(url) {
-  const response = await fetch(url, { method: "DELETE" });
+  const response = await fetch(url, { method: "DELETE", headers: authHeaders() });
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Something went wrong. Please try again.");
   return data;
@@ -231,6 +614,56 @@ function getCompanyRequestContext() {
     companyId: selectedCompany?.id || null,
     companyKnowledge: getSavedKnowledge(),
   };
+}
+
+function getFirstKnowledgeUrl() {
+  return knowledgeUrls.value
+    .split(/\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean)[0] || "";
+}
+
+function getCompanyNameFromUrl(rawUrl) {
+  try {
+    const url = new URL(/^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`);
+    const host = url.hostname.replace(/^www\./i, "");
+    const label = host.split(".")[0] || "Company";
+    return label
+      .split(/[-_]/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ") || "Company";
+  } catch {
+    return "Company";
+  }
+}
+
+async function ensureCompanyForKnowledgeBuild() {
+  if (selectedCompany) return selectedCompany;
+
+  const firstUrl = getFirstKnowledgeUrl();
+  const companyName = getCompanyNameFromUrl(firstUrl);
+  setStatus(knowledgeStatus, `Creating ${companyName} company profile from the website URL...`, "neutral");
+
+  const data = await postJson("/api/companies", {
+    company_name: companyName,
+    website_urls: knowledgeUrls.value,
+    industry: "",
+    services: "",
+    products: "",
+    target_audience: "",
+    competitors: "",
+    brand_tone: "",
+    visibility: "private",
+    notes: "Created automatically from the Build Company Profile tab.",
+  });
+
+  const createdCompany = data.company;
+  if (!createdCompany?.id) throw new Error("Company profile was created, but no company id was returned.");
+  await fetchUserCompanies(currentSession?.user?.id, { selectedCompanyId: createdCompany.id });
+  const matchedCompany = companies.find((company) => company.id === createdCompany.id) || createdCompany;
+  selectCompany(matchedCompany);
+  return matchedCompany;
 }
 
 function renderRecommendation(recommendation) {
@@ -323,7 +756,6 @@ async function generateContent(event) {
 
 async function buildKnowledge(event) {
   event.preventDefault();
-  if (!requireSelectedCompany(knowledgeStatus)) return;
 
   if (!knowledgeUrls.value.trim()) {
     setStatus(knowledgeStatus, "Please enter at least one company website URL.", "error");
@@ -332,10 +764,12 @@ async function buildKnowledge(event) {
   }
 
   setLoading(knowledgeButton, true, "Reading pages...", "Build Knowledge Profile");
-  setStatus(knowledgeStatus, "Fetching pages and extracting the selected company's website profile...", "neutral");
+  setStatus(knowledgeStatus, "Preparing the company profile and reading website pages...", "neutral");
   profileBadge.textContent = "Working";
 
   try {
+    await ensureCompanyForKnowledgeBuild();
+    setStatus(knowledgeStatus, "Fetching pages and extracting the selected company's website profile...", "neutral");
     const data = await postJson("/api/build-knowledge", { urls: knowledgeUrls.value, ...getCompanyRequestContext() });
     saveKnowledgeToLocalStorage(data.output);
     if (selectedCompany) {
@@ -607,7 +1041,7 @@ async function loadLibrary(event) {
     if (libraryContentType.value) params.set("contentType", libraryContentType.value);
     if (libraryBusinessCategory.value) params.set("businessCategory", libraryBusinessCategory.value);
     if (selectedCompany?.id) params.set("companyId", selectedCompany.id);
-    const response = await fetch(`/api/saved-marketing-content?${params.toString()}`);
+    const response = await fetch(`/api/saved-marketing-content?${params.toString()}`, { headers: authHeaders() });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Unable to load saved content.");
 
@@ -759,38 +1193,6 @@ function setupTabs() {
   showTab("generate");
 }
 
-function loadSavedProfile() {
-  fetch("/api/company-knowledge")
-    .then((response) => response.json().then((data) => ({ ok: response.ok, data })))
-    .then(({ ok, data }) => {
-      if (ok && data.profile) {
-        const output = data.output || data.profile.output || "";
-        saveKnowledgeToLocalStorage(output);
-        knowledgeOutput.value = output;
-        profileBadge.textContent = "Saved";
-        updateKnowledgeUseBadge(true);
-        return;
-      }
-
-      const savedKnowledge = getSavedKnowledge();
-      knowledgeOutput.value = savedKnowledge || EMPTY_KNOWLEDGE_MESSAGE;
-      profileBadge.textContent = savedKnowledge ? "Saved locally" : "Not built";
-      updateKnowledgeUseBadge(Boolean(savedKnowledge));
-      if (data?.error && !savedKnowledge) {
-        setStatus(knowledgeStatus, data.error, "error");
-      }
-    })
-    .catch(() => {
-      const savedKnowledge = getSavedKnowledge();
-      knowledgeOutput.value = savedKnowledge || EMPTY_KNOWLEDGE_MESSAGE;
-      profileBadge.textContent = savedKnowledge ? "Saved locally" : "Not built";
-      updateKnowledgeUseBadge(Boolean(savedKnowledge));
-    })
-    .finally(() => {
-      knowledgeOutput.readOnly = true;
-    });
-}
-
 function updateKnowledgeUseBadge(isUsing) {
   knowledgeUseBadge.textContent = selectedCompany
     ? isUsing
@@ -812,21 +1214,35 @@ function saveKnowledgeToLocalStorage(profileText) {
   localStorage.setItem(COMPANY_KNOWLEDGE_KEY, profileText);
 }
 
-async function loadCompanies() {
+async function fetchUserCompanies(userId, { selectedCompanyId = "" } = {}) {
+  if (!userId) {
+    companies = [];
+    renderCompanySelect(selectedCompanyId);
+    setStatus(companyStatus, "Please log in before loading company profiles.", "error");
+    return [];
+  }
+
   try {
-    const response = await fetch("/api/companies");
+    console.log("[companies] fetch for user:", userId);
+    const response = await fetch("/api/companies", { headers: authHeaders() });
     const data = await response.json();
+    console.log("[companies] fetch response:", data);
     if (!response.ok) throw new Error(data.error || "Unable to load company profiles.");
     companies = data.companies || [];
+    if (!companies.length) {
+      setStatus(companyStatus, "No companies found for this account. Create your first company profile.", "neutral");
+    }
   } catch (error) {
-    companies = [createDefaultCompany()];
-    setStatus(companyStatus, `${error.message} Using local CygniSoft example profile.`, "error");
+    console.error("[companies] fetch companies error:", error);
+    companies = [];
+    setStatus(companyStatus, "Company profiles could not be loaded. Please try again.", "error");
   }
-  renderCompanySelect();
+  renderCompanySelect(selectedCompanyId);
+  return companies;
 }
 
-function renderCompanySelect() {
-  const previousId = localStorage.getItem(SELECTED_COMPANY_KEY);
+function renderCompanySelect(preferredId = "") {
+  const previousId = preferredId || localStorage.getItem(SELECTED_COMPANY_KEY);
   companySelect.innerHTML = `<option value="">Select a company profile</option>`;
   companies.forEach((company, index) => {
     const option = document.createElement("option");
@@ -846,6 +1262,12 @@ function selectCompany(company) {
     localStorage.setItem(SELECTED_COMPANY_KEY, selectedId);
     selectedCompanyBadge.textContent = `Using selected company profile: ${selectedCompany.company_name}`;
     selectedCompanyBadge.dataset.active = "true";
+    const visibility = selectedCompany.visibility || "private";
+    companyVisibilityBadge.textContent =
+      visibility === "public_demo" ? "Demo company" : visibility === "shared" ? "Shared company" : "Private company";
+    const canManage = canManageSelectedCompany();
+    editCompanyButton.disabled = !canManage;
+    deleteCompanyButton.disabled = !canManage;
     updateKnowledgeUseBadge(true);
     const brain = selectedCompany.profile?.output || getSavedKnowledge();
     if (brain) {
@@ -859,8 +1281,17 @@ function selectCompany(company) {
   } else {
     selectedCompanyBadge.textContent = "Please create or select a company profile first.";
     selectedCompanyBadge.dataset.active = "false";
+    companyVisibilityBadge.textContent = "Private company";
+    editCompanyButton.disabled = true;
+    deleteCompanyButton.disabled = true;
     updateKnowledgeUseBadge(false);
   }
+}
+
+function canManageSelectedCompany() {
+  if (!selectedCompany) return false;
+  if (currentUserProfile?.role === "admin") return true;
+  return selectedCompany.owner_id && selectedCompany.owner_id === currentSession?.user?.id;
 }
 
 function openCompanyForm(company = null) {
@@ -874,6 +1305,7 @@ function openCompanyForm(company = null) {
   companyAudienceInput.value = (company?.target_audience || []).join("\n");
   companyCompetitorsInput.value = Array.isArray(company?.competitors) ? company.competitors.join("\n") : "";
   companyToneInput.value = company?.brand_tone || "";
+  companyVisibilityInput.value = company?.visibility || "private";
   companyNotesInput.value = company?.notes || "";
   setStatus(companyStatus, editingCompanyId ? "Edit the selected company profile." : "Create a new company profile.", "neutral");
 }
@@ -894,6 +1326,7 @@ async function saveCompanyProfile(event) {
     target_audience: companyAudienceInput.value,
     competitors: companyCompetitorsInput.value,
     brand_tone: companyToneInput.value,
+    visibility: companyVisibilityInput.value,
     notes: companyNotesInput.value,
   };
   if (!payload.company_name.trim()) {
@@ -902,22 +1335,36 @@ async function saveCompanyProfile(event) {
   }
   setLoading(saveCompanyButton, true, "Saving...", "Save Company Profile");
   try {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabaseAuth.auth.getUser();
+    if (userError || !user?.id) throw new Error("Your login session could not be verified. Please log in again.");
+    console.log("[companies] current user id before save:", user.id);
+
     const url = editingCompanyId ? `/api/companies/${encodeURIComponent(editingCompanyId)}` : "/api/companies";
     const method = editingCompanyId ? "PATCH" : "POST";
-    const response = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const response = await fetch(url, { method, headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(payload) });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Unable to save company.");
-    await loadCompanies();
-    selectCompany(data.company);
+    console.log("[companies] company insert/update response:", data);
+    if (!response.ok) {
+      console.error("[companies] company insert/update error:", data.error);
+      throw new Error(data.error || "Unable to save company.");
+    }
+    await fetchUserCompanies(user.id, { selectedCompanyId: data.company?.id || editingCompanyId });
+    const savedCompany = companies.find((company) => company.id === data.company?.id) || data.company;
+    selectCompany(savedCompany);
     closeCompanyForm();
-    setStatus(companyStatus, "Company profile saved.", "success");
+    setStatus(
+      companyStatus,
+      data.localFallback
+        ? "Company profile saved locally. Run the Supabase schema later to enable cloud database storage."
+        : "Company profile saved.",
+      "success"
+    );
   } catch (error) {
-    const localCompany = { ...createDefaultCompany(), ...parseCompanyPayloadLocally(payload), id: editingCompanyId || `local-${Date.now()}` };
-    companies = editingCompanyId ? companies.map((company) => (company.id === editingCompanyId ? localCompany : company)) : [localCompany, ...companies];
-    renderCompanySelect();
-    selectCompany(localCompany);
-    closeCompanyForm();
-    setStatus(companyStatus, `Saved locally, but database save failed: ${error.message}`, "error");
+    console.error("[companies] company insert error:", error);
+    setStatus(companyStatus, error.message || "Company could not be saved. Please try again.", "error");
   } finally {
     setLoading(saveCompanyButton, false, "Saving...", "Save Company Profile");
   }
@@ -933,10 +1380,10 @@ async function deleteSelectedCompany() {
       await deleteJson(`/api/companies/${encodeURIComponent(selectedCompany.id)}`);
     } catch (error) {
       setStatus(companyStatus, `Database delete failed: ${error.message}`, "error");
+      return;
     }
   }
-  companies = companies.filter((company) => company !== selectedCompany && company.id !== selectedCompany.id);
-  renderCompanySelect();
+  await fetchUserCompanies(currentSession?.user?.id);
   setStatus(companyStatus, "Company profile deleted from this workspace.", "success");
 }
 
@@ -966,6 +1413,7 @@ function parseCompanyPayloadLocally(payload) {
     target_audience: splitLines(payload.target_audience),
     competitors: splitLines(payload.competitors),
     brand_tone: payload.brand_tone,
+    visibility: payload.visibility || "private",
     notes: payload.notes,
     profile: {},
   };
@@ -997,6 +1445,15 @@ function init() {
   fillSelectWithAll(libraryBusinessCategory, BUSINESS_CATEGORIES, "All categories");
 
   setupTabs();
+
+  authForm.addEventListener("submit", handleAuthSubmit);
+  signInModeButton.addEventListener("click", () => setAuthMode("signin"));
+  signUpModeButton.addEventListener("click", () => setAuthMode("signup"));
+  forgotModeButton.addEventListener("click", () => setAuthMode("forgot"));
+  forgotPasswordButton.addEventListener("click", sendForgotPasswordFromSignIn);
+  resendConfirmationButton.addEventListener("click", resendConfirmationEmail);
+  goToSignInButton.addEventListener("click", () => setAuthMode("signin"));
+  logoutButton.addEventListener("click", logout);
 
   companySelect.addEventListener("change", () => {
     const selected = companies.find((company, index) => (company.id || `local-${index}`) === companySelect.value);
@@ -1043,11 +1500,12 @@ function init() {
   resetForm();
   resetMarketForm();
   resetPlannerForm();
+  setAuthMode("signin");
   setStatus(knowledgeStatus, "Enter public company URLs to build a reusable Company Business Brain.", "neutral");
   setStatus(reviewStatus, "Enter a page URL to get a focused content and SEO review.", "neutral");
   setStatus(competitorStatus, "Enter competitor URLs to compare positioning, CTAs, trust signals, and gaps.", "neutral");
   setStatus(libraryStatus, "Load saved generated content from Supabase.", "neutral");
-  loadCompanies();
+  initializeAuth();
 }
 
 init();

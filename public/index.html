@@ -8,7 +8,54 @@
     <script type="module" src="./app.js"></script>
   </head>
   <body>
-    <main class="app-shell">
+    <section id="authView" class="auth-view">
+      <form id="authForm" class="auth-card">
+        <p class="eyebrow">Secure workspace</p>
+        <h1>CygniSoft AI Agent</h1>
+        <p id="authIntro">Sign in to your workspace.</p>
+        <div id="authMessage" class="auth-message" data-type="info" hidden>
+          <p id="authMessageText"></p>
+          <button id="resendConfirmationButton" class="secondary-button" type="button" hidden>Resend confirmation email</button>
+          <button id="goToSignInButton" class="secondary-button" type="button" hidden>Go to Sign In</button>
+        </div>
+        <div class="auth-tabs" role="tablist" aria-label="Authentication options">
+          <button id="signInModeButton" class="auth-tab is-active" type="button">Sign In</button>
+          <button id="signUpModeButton" class="auth-tab" type="button">Sign Up</button>
+          <button id="forgotModeButton" class="auth-tab" type="button">Forgot Password</button>
+        </div>
+        <label for="authEmail">
+          <span>Email</span>
+          <input id="authEmail" type="email" autocomplete="email" required />
+        </label>
+        <label for="authPassword">
+          <span>Password</span>
+          <input id="authPassword" type="password" autocomplete="current-password" />
+        </label>
+        <label id="confirmPasswordLabel" for="authConfirmPassword" hidden>
+          <span>Confirm Password</span>
+          <input id="authConfirmPassword" type="password" autocomplete="new-password" />
+        </label>
+        <div class="actions">
+          <button id="authSubmitButton" class="primary-button" type="submit">
+            <span class="spinner" hidden></span>
+            <span class="button-text">Sign In</span>
+          </button>
+          <button id="forgotPasswordButton" class="secondary-button" type="button">Forgot your password?</button>
+        </div>
+        <p id="authStatus" class="status" data-type="neutral" role="status"></p>
+      </form>
+    </section>
+
+    <main id="appShell" class="app-shell" hidden>
+      <section class="user-bar" aria-label="User session">
+        <div>
+          <strong id="userEmail">Not signed in</strong>
+          <span id="adminBadge" class="badge" hidden>Admin</span>
+          <p>You only see companies you created or have access to.</p>
+        </div>
+        <button id="logoutButton" class="secondary-button" type="button">Log Out</button>
+      </section>
+
       <section class="hero" aria-labelledby="appTitle">
         <div>
           <p class="eyebrow">Marketing workspace</p>
@@ -31,6 +78,7 @@
             <button id="deleteCompanyButton" class="danger-button" type="button">Delete Company Profile</button>
           </div>
           <span id="selectedCompanyBadge" class="knowledge-pill">Please create or select a company profile first.</span>
+          <span id="companyVisibilityBadge" class="badge">Private company</span>
         </div>
         <form id="companyForm" class="company-form" hidden>
           <div class="field-row">
@@ -71,6 +119,14 @@
             <span>Brand Tone</span>
             <input id="companyToneInput" type="text" placeholder="Professional, clear, friendly, not too salesy" />
           </label>
+          <label for="companyVisibilityInput" class="request-field">
+            <span>Visibility</span>
+            <select id="companyVisibilityInput">
+              <option value="private">Private</option>
+              <option value="shared">Shared</option>
+              <option value="public_demo">Demo</option>
+            </select>
+          </label>
           <label for="companyNotesInput" class="request-field">
             <span>Notes</span>
             <textarea id="companyNotesInput" rows="4"></textarea>
@@ -83,6 +139,10 @@
             <button id="cancelCompanyButton" class="secondary-button" type="button">Cancel</button>
           </div>
           <p id="companyStatus" class="status" data-type="neutral" role="status"></p>
+          <div class="member-placeholder">
+            <strong>Manage Members</strong>
+            <p>Member management is ready for Supabase policies. Add users to `company_members` with owner, editor, or viewer roles.</p>
+          </div>
         </form>
       </section>
 
