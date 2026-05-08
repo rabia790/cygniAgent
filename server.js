@@ -5,7 +5,8 @@ const { AsyncLocalStorage } = require("async_hooks");
 const { randomUUID } = require("crypto");
 
 const PUBLIC_DIR = path.join(__dirname, "public");
-const LOCAL_COMPANIES_PATH = path.join(__dirname, "data", "companies.json");
+const LOCAL_DATA_DIR = process.env.CYGNI_LOCAL_DATA_DIR || (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME ? path.join("/tmp", "cygni-agent") : path.join(__dirname, "data"));
+const LOCAL_COMPANIES_PATH = path.join(LOCAL_DATA_DIR, "companies.json");
 const requestStore = new AsyncLocalStorage();
 
 const PORT = Number(process.env.PORT || 3000);
@@ -2531,8 +2532,15 @@ function readLocalCompanies() {
 }
 
 function writeLocalCompanies(companies) {
-  fs.mkdirSync(path.dirname(LOCAL_COMPANIES_PATH), { recursive: true });
-  fs.writeFileSync(LOCAL_COMPANIES_PATH, JSON.stringify(companies, null, 2));
+  try {
+    fs.mkdirSync(path.dirname(LOCAL_COMPANIES_PATH), { recursive: true });
+    fs.writeFileSync(LOCAL_COMPANIES_PATH, JSON.stringify(companies, null, 2));
+  } catch (error) {
+    console.error("[companies] local company write error:", error.message);
+    throw new Error(
+      "Company profiles cannot be saved because the Supabase companies table is missing and this host does not provide writable persistent storage. Run supabase-schema.sql in Supabase to enable live company profile saves."
+    );
+  }
 }
 
 function listLocalCompanies(userId = "", dbError = null) {
