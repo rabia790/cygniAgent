@@ -62,7 +62,7 @@
           </button>
           <button class="tab-button" type="button" data-tab="companies">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2M4 9h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9Zm7 0v12"/></svg>
-            <span>Portfolio</span>
+            <span>Companies</span>
           </button>
           <button class="tab-button" type="button" data-tab="knowledge">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V9m5 11V4m5 16v-7m5 7V7"/></svg>
@@ -70,11 +70,11 @@
           </button>
           <button class="tab-button" type="button" data-tab="generate">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6V3Zm8 0v5h5M9 13h6M9 17h6"/></svg>
-            <span>Strategic Outputs</span>
+            <span>Content Studio</span>
           </button>
           <button class="tab-button" type="button" data-tab="library">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 7 3v6c0 4.4-2.8 7.2-7 9-4.2-1.8-7-4.6-7-9V6l7-3Zm-3 9 2 2 4-4"/></svg>
-            <span>Approved Outputs</span>
+            <span>Content Library</span>
           </button>
           <button class="tab-button" type="button" data-tab="settings">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm8 4a8 8 0 0 0-.1-1.2l2-1.5-2-3.5-2.4 1a8 8 0 0 0-2-1.2L15.2 3h-4l-.4 2.6a8 8 0 0 0-2 1.2l-2.4-1-2 3.5 2 1.5A8 8 0 0 0 6.3 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 2 1.2l.4 2.6h4l.4-2.6a8 8 0 0 0 2-1.2l2.4 1 2-3.5-2-1.5c.1-.4.1-.8.1-1.2Z"/></svg>
@@ -118,8 +118,8 @@
                 Unify website intelligence, competitor signals, market context, and campaign planning into executive-grade outputs your team can act on.
               </p>
               <div class="hero-actions">
-                <button class="tab-button primary-button hero-primary" type="button" data-tab="generate">Start Strategic Brief</button>
-                <button class="tab-button hero-secondary" type="button" data-tab="knowledge">Explore Intelligence</button>
+                <button class="tab-button primary-button hero-primary" type="button" data-tab="generate">Open Content Studio</button>
+                <button class="tab-button hero-secondary" type="button" data-tab="knowledge">Review Intelligence</button>
               </div>
             </div>
             <div class="intelligence-visual" aria-hidden="true">
@@ -133,34 +133,54 @@
             </div>
           </div>
 
-          <section class="step-grid" aria-label="Recommended workflow">
-            <button class="step-card tab-button" type="button" data-tab="companies">
-              <span class="step-number">1</span>
-              <div><small>Step 1</small><strong>Company Profile</strong><p>Create or select the company this workspace should use.</p></div>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 11a4 4 0 1 0-8 0m8 0a4 4 0 1 1-8 0m8 0h3m-14 0h3M6 20c1-3 3-5 6-5s5 2 6 5"/></svg>
-              <em>Open</em>
-            </button>
-            <button class="step-card tab-button" type="button" data-tab="knowledge">
-              <span class="step-number">2</span>
-              <div><small>Step 2</small><strong>Intelligence Profile</strong><p>Analyze website URLs and enrich the selected company with AI-ready business context.</p></div>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V9m5 11V4m5 16v-7m5 7V7"/></svg>
-              <em>Open</em>
-            </button>
-            <button class="step-card tab-button" type="button" data-tab="generate">
-              <span class="step-number">3</span>
-              <div><small>Step 3</small><strong>Create strategic outputs</strong><p>Generate board-ready content, research, and campaign recommendations.</p></div>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6V3Zm8 0v5h5M9 13h6M9 17h6"/></svg>
-              <em>Open</em>
-            </button>
-            <button class="step-card tab-button" type="button" data-tab="library">
-              <span class="step-number">4</span>
-              <div><small>Step 4</small><strong>Approve and reuse</strong><p>Keep high-confidence assets organized by company and campaign.</p></div>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 7 3v6c0 4.4-2.8 7.2-7 9-4.2-1.8-7-4.6-7-9V6l7-3Zm-3 9 2 2 4-4"/></svg>
-              <em>Open</em>
-            </button>
+          <section class="manager-section" aria-labelledby="snapshotTitle">
+            <div class="manager-section-heading">
+              <div>
+                <p class="eyebrow">Company Snapshot</p>
+                <h2 id="snapshotTitle">Workspace readiness</h2>
+              </div>
+            </div>
+            <div id="companySnapshotGrid" class="snapshot-grid"></div>
           </section>
 
-          <section class="content-card-grid" aria-label="Content and research tools">
+          <section class="manager-section" aria-labelledby="nextStepsTitle">
+            <div class="manager-section-heading"><div><p class="eyebrow">Recommended Next Steps</p><h2 id="nextStepsTitle">Best actions for this company</h2></div></div>
+            <div id="recommendedNextSteps" class="recommendation-grid"></div>
+          </section>
+
+          <section class="manager-section" aria-labelledby="quickActionsTitle">
+            <div class="manager-section-heading"><div><p class="eyebrow">Quick Actions</p><h2 id="quickActionsTitle">Create business-ready work</h2></div></div>
+            <div class="quick-action-grid">
+              <button class="quick-action-card" type="button" data-action="linkedin-post"><strong>Create LinkedIn Post</strong><p>Draft a company-aware LinkedIn post using the selected intelligence profile.</p><span>Create Post</span></button>
+              <button class="quick-action-card" type="button" data-action="cold-email"><strong>Write Cold Email</strong><p>Create outreach copy for a specific audience, offer, or campaign.</p><span>Write Email</span></button>
+              <button class="quick-action-card" type="button" data-action="website-review"><strong>Review Website</strong><p>Assess messaging, SEO, conversion paths, and credibility signals.</p><span>Review Site</span></button>
+              <button class="quick-action-card" type="button" data-action="competitors"><strong>Analyze Competitors</strong><p>Map positioning, offers, trust signals, and whitespace.</p><span>Analyze</span></button>
+              <button class="quick-action-card" type="button" data-action="campaign-plan"><strong>Create Campaign Plan</strong><p>Shape audiences, channels, hooks, and activation steps.</p><span>Plan Campaign</span></button>
+              <button class="quick-action-card" type="button" data-action="market-insight"><strong>Generate Market Insight</strong><p>Distill external signals into practical business recommendations.</p><span>Generate Insight</span></button>
+            </div>
+          </section>
+
+          <section class="manager-section" aria-labelledby="recentOutputsTitle">
+            <div class="manager-section-heading">
+              <div><p class="eyebrow">Recent Outputs</p><h2 id="recentOutputsTitle">Latest saved work</h2></div>
+              <button class="secondary-button tab-button" type="button" data-tab="library">Open Content Library</button>
+            </div>
+            <div id="dashboardRecentOutputs" class="recent-output-list"></div>
+          </section>
+
+          <section class="manager-section command-bar-section" aria-label="AI command bar">
+            <div class="manager-command-bar">
+              <input id="growthCommandInput" type="text" placeholder="Ask the growth agent what you need..." />
+              <div class="command-chip-row">
+                <button type="button" data-action="linkedin-post">LinkedIn Post</button>
+                <button type="button" data-action="cold-email">Cold Email</button>
+                <button type="button" data-action="campaign-plan">Campaign Plan</button>
+                <button type="button" data-action="website-review">Website Review</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="content-card-grid" aria-label="Content and research tools" hidden>
             <button class="content-card tab-button" type="button" data-tab="review">
               <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 0c2.5 2.4 3.8 5.4 3.8 9S14.5 18.6 12 21M12 3C9.5 5.4 8.2 8.4 8.2 12s1.3 6.6 3.8 9M3.6 9h16.8M3.6 15h16.8"/></svg></span>
               <div><strong>Website Intelligence</strong><p>Assess messaging, SEO, conversion paths, and credibility signals.</p></div>

@@ -63,6 +63,10 @@ const linkedinStatus = document.querySelector("#linkedinStatus");
 const resetButton = document.querySelector("#resetButton");
 const statusMessage = document.querySelector("#statusMessage");
 const sourceBadge = document.querySelector("#sourceBadge");
+const companySnapshotGrid = document.querySelector("#companySnapshotGrid");
+const recommendedNextSteps = document.querySelector("#recommendedNextSteps");
+const dashboardRecentOutputs = document.querySelector("#dashboardRecentOutputs");
+const growthCommandInput = document.querySelector("#growthCommandInput");
 
 const knowledgeForm = document.querySelector("#knowledgeForm");
 const knowledgeUrls = document.querySelector("#knowledgeUrls");
@@ -183,6 +187,10 @@ let resendConfirmationCooldownTimer = null;
 let resendConfirmationCooldownRemaining = 0;
 let resendConfirmationRequestInFlight = false;
 let linkedInConnection = { configured: false, connected: false, account: null };
+let dashboardSavedOutputs = [];
+let hasCompetitorReviewThisSession = false;
+let hasMarketInsightThisSession = false;
+let openAppTab = () => {};
 
 function fillSelect(select, values) {
   values.forEach((value) => {
@@ -1004,6 +1012,8 @@ async function reviewCompetitors(event) {
     });
     competitorOutput.value = data.output;
     competitorBadge.textContent = "Complete";
+    hasCompetitorReviewThisSession = true;
+    updateDashboardWorkspace();
     showSaveWarning(competitorStatus, data, "Competitor review complete");
   } catch (error) {
     setStatus(competitorStatus, error.message, "error");
@@ -1037,6 +1047,8 @@ async function generateMarketTrends(event) {
     });
     marketOutput.value = data.output;
     marketBadge.textContent = data.source === "openai" ? "AI generated" : "Local generator";
+    hasMarketInsightThisSession = true;
+    updateDashboardWorkspace();
     updateKnowledgeUseBadge(data.usingProfile);
     showSaveWarning(marketStatus, data, "Market and hiring trend research generated");
   } catch (error) {
@@ -1142,6 +1154,7 @@ async function checkLinkedInStatus() {
     linkedInConnection = { configured: false, connected: false, account: null };
   }
   updateLinkedInButtons();
+  updateDashboardWorkspace();
 }
 
 async function connectLinkedIn() {
@@ -1263,6 +1276,7 @@ async function saveGeneratedContent() {
     lastGenerationMeta = { ...(lastGenerationMeta || {}), savedContentId: data.item?.id || null };
     setStatus(statusMessage, "Saved to Approved Outputs.", "success");
     loadLibrary();
+    loadDashboardRecentOutputs();
   } catch (error) {
     setStatus(statusMessage, `Generated successfully, but saving failed: ${error.message}`, "error");
   } finally {
@@ -1374,6 +1388,304 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
+function hasCompanyIntelligence() {
+  const outputText = selectedCompany?.profile?.output || getSavedKnowledge();
+  return Boolean(selectedCompany && outputText && !String(outputText).includes(EMPTY_KNOWLEDGE_MESSAGE));
+}
+
+function getPublishingStatusLabel() {
+  if (!linkedInConnection.configured) return "Not configured";
+  if (linkedInConnection.connected) return "LinkedIn connected";
+  return "Not connected";
+}
+
+function renderCompanySnapshot() {
+  if (!companySnapshotGrid) return;
+  const intelligenceReady = hasCompanyIntelligence();
+  const savedCount = dashboardSavedOutputs.length;
+  const tiles = [
+    {
+      label: "Company Profile",
+      value: selectedCompany ? "Ready" : "Missing",
+      detail: selectedCompany?.company_name || "Select or create a company",
+      state: selectedCompany ? "ready" : "missing",
+    },
+    {
+      label: "Intelligence Profile",
+      value: intelligenceReady ? "Ready" : "Missing",
+      detail: intelligenceReady ? "Company context available" : "Build intelligence from website URLs",
+      state: intelligenceReady ? "ready" : "missing",
+    },
+    {
+      label: "Content Library",
+      value: `${savedCount} saved`,
+      detail: savedCount ? "Recent outputs available" : "Save outputs to build the library",
+      state: savedCount ? "ready" : "neutral",
+    },
+    {
+      label: "Publishing Setup",
+      value: getPublishingStatusLabel(),
+      detail: linkedInConnection.connected ? linkedInConnection.account?.name || "LinkedIn member" : "Used for LinkedIn publishing",
+      state: linkedInConnection.connected ? "ready" : "neutral",
+    },
+  ];
+
+  companySnapshotGrid.innerHTML = tiles
+    .map(
+      (tile) => `<article class="snapshot-tile" data-state="${tile.state}">
+        <span>${escapeHtml(tile.label)}</span>
+        <strong>${escapeHtml(tile.value)}</strong>
+        <p>${escapeHtml(tile.detail)}</p>
+      </article>`
+    )
+    .join("");
+}
+
+function getRecommendedActions() {
+  const actions = [];
+  const intelligenceReady = hasCompanyIntelligence();
+  if (!selectedCompany) {
+    actions.push({
+      title: "Create a company profile",
+      reason: "Set the business context before generating company-aware work.",
+      button: "Create Profile",
+      action: "companies",
+    });
+  } else if (!intelligenceReady) {
+    actions.push({
+      title: "Build Intelligence Profile",
+      reason: "Analyze the company website so future outputs use real business context.",
+      button: "Build Intelligence",
+      action: "knowledge",
+    });
+  }
+
+  if (intelligenceReady && !dashboardSavedOutputs.length) {
+    actions.push({
+      title: "Create your first LinkedIn post",
+      reason: "Use the selected company intelligence to create a practical awareness post for potential clients.",
+      button: "Create Post",
+      action: "linkedin-post",
+    });
+  }
+
+  if (selectedCompany && !hasCompetitorReviewThisSession) {
+    actions.push({
+      title: "Analyze competitors",
+      reason: "Compare positioning and offers to find useful market whitespace.",
+      button: "Analyze",
+      action: "competitors",
+    });
+  }
+
+  if (selectedCompany && !hasMarketInsightThisSession) {
+    actions.push({
+      title: "Generate market insight",
+      reason: "Turn market and hiring context into practical business recommendations.",
+      button: "Generate Insight",
+      action: "market-insight",
+    });
+  }
+
+  if (selectedCompany && (!linkedInConnection.configured || !linkedInConnection.connected)) {
+    actions.push({
+      title: "Connect LinkedIn to publish content",
+      reason: "Publishing setup lets approved drafts move from planning to action.",
+      button: "Open Studio",
+      action: "linkedin-post",
+    });
+  }
+
+  return actions.slice(0, 3);
+}
+
+function renderRecommendedNextSteps() {
+  if (!recommendedNextSteps) return;
+  const actions = getRecommendedActions();
+  if (!actions.length) {
+    recommendedNextSteps.innerHTML = `<article class="recommendation-card"><strong>Workspace is ready</strong><p>Create a new output, review recent work, or generate fresh market insight.</p><button type="button" data-action="linkedin-post">Create Post</button></article>`;
+    return;
+  }
+
+  recommendedNextSteps.innerHTML = actions
+    .map(
+      (item) => `<article class="recommendation-card">
+        <strong>${escapeHtml(item.title)}</strong>
+        <p>${escapeHtml(item.reason)}</p>
+        <button type="button" data-action="${escapeHtml(item.action)}">${escapeHtml(item.button)}</button>
+      </article>`
+    )
+    .join("");
+}
+
+function formatDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function renderDashboardRecentOutputs() {
+  if (!dashboardRecentOutputs) return;
+  const items = dashboardSavedOutputs.slice(0, 5);
+  if (!items.length) {
+    dashboardRecentOutputs.innerHTML = `<article class="recent-empty-state">
+      <strong>No approved outputs yet.</strong>
+      <p>Generate content and save it to build your company library.</p>
+      <button class="primary-button" type="button" data-action="linkedin-post">Create First Output</button>
+    </article>`;
+    return;
+  }
+
+  dashboardRecentOutputs.innerHTML = items
+    .map((item) => {
+      const preview = String(item.generated_output || "").replace(/\s+/g, " ").trim().slice(0, 150);
+      return `<article class="recent-output-item" data-id="${escapeHtml(item.id)}">
+        <div>
+          <strong>${escapeHtml(item.title || item.content_type || "Saved Output")}</strong>
+          <p>${escapeHtml(item.content_type || "Content")} ${formatDate(item.created_at) ? `- ${formatDate(item.created_at)}` : ""}</p>
+          <small>${escapeHtml(preview || "No preview available.")}</small>
+        </div>
+        <div class="recent-output-actions">
+          <button type="button" data-action="open-output">Open</button>
+          <button type="button" data-action="copy-output">Copy</button>
+          <button type="button" data-action="post-output">Post to LinkedIn</button>
+        </div>
+      </article>`;
+    })
+    .join("");
+}
+
+function updateDashboardWorkspace() {
+  renderCompanySnapshot();
+  renderRecommendedNextSteps();
+  renderDashboardRecentOutputs();
+}
+
+async function loadDashboardRecentOutputs() {
+  if (!currentSession || !dashboardRecentOutputs) {
+    dashboardSavedOutputs = [];
+    updateDashboardWorkspace();
+    return;
+  }
+
+  try {
+    const params = new URLSearchParams();
+    if (selectedCompany?.id) params.set("companyId", selectedCompany.id);
+    const response = await fetch(`/api/saved-marketing-content?${params.toString()}`, { headers: authHeaders() });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Unable to load recent outputs.");
+    dashboardSavedOutputs = data.items || [];
+  } catch {
+    dashboardSavedOutputs = [];
+  }
+  updateDashboardWorkspace();
+}
+
+function setContentTypeIfAvailable(value) {
+  if ([...contentTypeSelect.options].some((option) => option.value === value)) {
+    contentTypeSelect.value = value;
+  }
+}
+
+function runQuickAction(action) {
+  if (action === "companies") {
+    openAppTab("companies");
+    return;
+  }
+  if (action === "knowledge") {
+    openAppTab("knowledge");
+    return;
+  }
+  if (action === "linkedin-post") {
+    setContentTypeIfAvailable("LinkedIn Post");
+    if (!userRequestInput.value.trim()) userRequestInput.value = "Create a LinkedIn post for the selected company.";
+    openAppTab("generate");
+    userRequestInput.focus();
+    return;
+  }
+  if (action === "cold-email") {
+    setContentTypeIfAvailable("Cold Email");
+    if (!userRequestInput.value.trim()) userRequestInput.value = "Write a cold email for a high-fit prospect audience.";
+    openAppTab("generate");
+    userRequestInput.focus();
+    return;
+  }
+  if (action === "website-review") {
+    openAppTab("review");
+    reviewUrl.focus();
+    return;
+  }
+  if (action === "competitors") {
+    openAppTab("competitor");
+    competitorUrls.focus();
+    return;
+  }
+  if (action === "campaign-plan") {
+    openAppTab("planner");
+    plannerNotes.focus();
+    return;
+  }
+  if (action === "market-insight") {
+    openAppTab("market");
+    marketRegion.focus();
+  }
+}
+
+function getRecentOutputByButton(button) {
+  const item = button.closest(".recent-output-item");
+  return dashboardSavedOutputs.find((outputItem) => String(outputItem.id) === String(item?.dataset.id));
+}
+
+function setupDashboardActions() {
+  const dashboard = document.querySelector("#dashboard");
+  if (dashboard) {
+    dashboard.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-action]");
+      if (!button) return;
+      const action = button.dataset.action;
+      if (action === "open-output") {
+        const item = getRecentOutputByButton(button);
+        if (!item) return;
+        output.value = item.generated_output || "";
+        setContentTypeIfAvailable(item.content_type || "LinkedIn Post");
+        openAppTab("generate");
+        updateLinkedInButtons();
+        return;
+      }
+      if (action === "copy-output") {
+        const item = getRecentOutputByButton(button);
+        if (!item) return;
+        await navigator.clipboard.writeText(item.generated_output || "");
+        return;
+      }
+      if (action === "post-output") {
+        const item = getRecentOutputByButton(button);
+        if (!item) return;
+        output.value = item.generated_output || "";
+        lastGenerationMeta = { ...(lastGenerationMeta || {}), savedContentId: item.id };
+        openAppTab("generate");
+        updateLinkedInButtons();
+        if (linkedInConnection.connected) postToLinkedIn();
+        else setStatus(linkedinStatus, "Connect LinkedIn before posting this output.", "neutral");
+        return;
+      }
+      runQuickAction(action);
+    });
+  }
+
+  if (growthCommandInput) {
+    growthCommandInput.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      if (!growthCommandInput.value.trim()) return;
+      userRequestInput.value = growthCommandInput.value.trim();
+      openAppTab("generate");
+      userRequestInput.focus();
+    });
+  }
+}
+
 function resetForm() {
   form.reset();
   contentTypeSelect.value = CONTENT_TYPES[0];
@@ -1429,8 +1741,10 @@ function setupTabs() {
       button.setAttribute("aria-selected", String(isActive));
     });
     panels.forEach((panel) => panel.classList.toggle("is-active", panel.id === tabId));
+    if (tabId) window.location.hash = tabId;
   }
 
+  openAppTab = showTab;
   buttons.forEach((button) => button.addEventListener("click", () => showTab(button.dataset.tab)));
   const initialTab = window.location.hash.replace("#", "");
   showTab(document.getElementById(initialTab) ? initialTab : "dashboard");
@@ -1530,6 +1844,8 @@ function selectCompany(company) {
     updateKnowledgeUseBadge(false);
   }
   updateActionAvailability();
+  loadDashboardRecentOutputs();
+  updateDashboardWorkspace();
 }
 
 function canManageSelectedCompany() {
@@ -1691,6 +2007,7 @@ function init() {
   fillSelectWithAll(libraryBusinessCategory, BUSINESS_CATEGORIES, "All categories");
 
   setupTabs();
+  setupDashboardActions();
 
   authForm.addEventListener("submit", handleAuthSubmit);
   signInModeButton.addEventListener("click", () => setAuthMode("signin"));
@@ -1754,6 +2071,7 @@ function init() {
   setStatus(reviewStatus, "Enter a page URL to get a focused content and SEO review.", "neutral");
   setStatus(competitorStatus, "Enter competitor URLs to compare positioning, CTAs, trust signals, and gaps.", "neutral");
   setStatus(libraryStatus, "Load saved generated content from Supabase.", "neutral");
+  updateDashboardWorkspace();
   initializeAuth();
 }
 
