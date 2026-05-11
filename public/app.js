@@ -57,6 +57,9 @@ const searchNote = document.querySelector("#searchNote");
 const generateButton = document.querySelector("#generateButton");
 const copyButton = document.querySelector("#copyButton");
 const saveContentButton = document.querySelector("#saveContentButton");
+const connectLinkedInButton = document.querySelector("#connectLinkedInButton");
+const postLinkedInButton = document.querySelector("#postLinkedInButton");
+const linkedinStatus = document.querySelector("#linkedinStatus");
 const resetButton = document.querySelector("#resetButton");
 const statusMessage = document.querySelector("#statusMessage");
 const sourceBadge = document.querySelector("#sourceBadge");
@@ -148,6 +151,15 @@ const companyNotesInput = document.querySelector("#companyNotesInput");
 const saveCompanyButton = document.querySelector("#saveCompanyButton");
 const cancelCompanyButton = document.querySelector("#cancelCompanyButton");
 const companyStatus = document.querySelector("#companyStatus");
+const companyUrlChoiceModal = document.querySelector("#companyUrlChoiceModal");
+const updateSelectedCompanyChoice = document.querySelector("#updateSelectedCompanyChoice");
+const createNewCompanyChoice = document.querySelector("#createNewCompanyChoice");
+const cancelCompanyChoice = document.querySelector("#cancelCompanyChoice");
+const linkedInPostModal = document.querySelector("#linkedInPostModal");
+const linkedInPostAccount = document.querySelector("#linkedInPostAccount");
+const linkedInPostPreview = document.querySelector("#linkedInPostPreview");
+const confirmLinkedInPostButton = document.querySelector("#confirmLinkedInPostButton");
+const cancelLinkedInPostButton = document.querySelector("#cancelLinkedInPostButton");
 
 const COMPANY_KNOWLEDGE_KEY = "cygnisoft_company_knowledge";
 const SELECTED_COMPANY_KEY = "cygnisoft_selected_company_id";
@@ -170,6 +182,7 @@ let resetEmailRequestInFlight = false;
 let resendConfirmationCooldownTimer = null;
 let resendConfirmationCooldownRemaining = 0;
 let resendConfirmationRequestInFlight = false;
+let linkedInConnection = { configured: false, connected: false, account: null };
 
 function fillSelect(select, values) {
   values.forEach((value) => {
@@ -188,15 +201,35 @@ function fillSelectWithAll(select, values, allLabel) {
   fillSelect(select, values);
 }
 
+function getFriendlyStatusMessage(message, type = "neutral") {
+  const text = String(message || "");
+  if (type !== "error") return text;
+  if (/ENOENT|EACCES|EPERM|PGRST|relation .* does not exist|row-level security|schema cache|JWT|fetch failed|network/i.test(text)) {
+    return "Something went wrong while saving or loading this workspace. Please check your company setup and try again.";
+  }
+  if (/Failed to fetch|Unable to connect|timeout/i.test(text)) {
+    return "We could not connect to the service. Please try again in a moment.";
+  }
+  return text || "Something went wrong. Please try again.";
+}
+
 function setStatus(element, message, type = "neutral") {
-  element.textContent = message;
+  element.textContent = getFriendlyStatusMessage(message, type);
   element.dataset.type = type;
 }
 
 function setLoading(button, isLoading, loadingText, idleText) {
-  button.disabled = isLoading;
+  button.disabled = isLoading || (button.dataset.requiresCompany === "true" && !selectedCompany);
   button.querySelector(".button-text").textContent = isLoading ? loadingText : idleText;
   button.querySelector(".spinner").hidden = !isLoading;
+}
+
+function updateActionAvailability() {
+  [generateButton, marketButton, plannerButton].forEach((button) => {
+    if (!button) return;
+    button.dataset.requiresCompany = "true";
+    button.disabled = !selectedCompany;
+  });
 }
 
 function isEmailRateLimitError(error) {
@@ -362,6 +395,8 @@ async function handleSessionChange() {
     appShell.hidden = true;
     authView.hidden = false;
     currentUserProfile = null;
+    linkedInConnection = { configured: false, connected: false, account: null };
+    updateLinkedInButtons();
     return;
   }
   authView.hidden = true;
@@ -370,11 +405,13 @@ async function handleSessionChange() {
     console.log("[auth] current user id after login:", currentSession.user?.id || "unknown");
     await loadCurrentUser();
     await fetchUserCompanies(currentSession.user?.id);
+    await checkLinkedInStatus();
   } catch (error) {
     userEmail.textContent = currentSession.user?.email || "Signed in";
     adminBadge.hidden = true;
     setStatus(companyStatus, `Dashboard opened, but account data could not be loaded: ${error.message}`, "error");
     await fetchUserCompanies(currentSession.user?.id);
+    await checkLinkedInStatus();
   }
 }
 
@@ -638,9 +675,30 @@ function getCompanyNameFromUrl(rawUrl) {
   }
 }
 
-async function ensureCompanyForKnowledgeBuild() {
-  if (selectedCompany) return selectedCompany;
+function getDomainFromUrl(rawUrl) {
+  try {
+    const url = new URL(/^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`);
+    return url.hostname.replace(/^www\./i, "").toLowerCase();
+  } catch {
+    return String(rawUrl || "")
+      .trim()
+      .replace(/^https?:\/\//i, "")
+      .replace(/^www\./i, "")
+      .split("/")[0]
+      .toLowerCase();
+  }
+}
 
+function selectedCompanyMatchesKnowledgeUrl() {
+  if (!selectedCompany) return false;
+  const firstDomain = getDomainFromUrl(getFirstKnowledgeUrl());
+  if (!firstDomain) return true;
+  const companyDomains = (selectedCompany.website_urls || []).map(getDomainFromUrl).filter(Boolean);
+  if (!companyDomains.length) return true;
+  return companyDomains.some((domain) => domain === firstDomain || domain.endsWith(`.${firstDomain}`) || firstDomain.endsWith(`.${domain}`));
+}
+
+async function createCompanyFromKnowledgeUrl() {
   const firstUrl = getFirstKnowledgeUrl();
   const companyName = getCompanyNameFromUrl(firstUrl);
   setStatus(knowledgeStatus, `Creating ${companyName} company profile from the website URL...`, "neutral");
@@ -655,7 +713,7 @@ async function ensureCompanyForKnowledgeBuild() {
     competitors: "",
     brand_tone: "",
     visibility: "private",
-    notes: "Created automatically from the Build Company Profile tab.",
+    notes: "Created automatically from the Intelligence Profile step.",
   });
 
   const createdCompany = data.company;
@@ -664,6 +722,48 @@ async function ensureCompanyForKnowledgeBuild() {
   const matchedCompany = companies.find((company) => company.id === createdCompany.id) || createdCompany;
   selectCompany(matchedCompany);
   return matchedCompany;
+}
+
+function askCompanyUrlChoice() {
+  if (!companyUrlChoiceModal || !updateSelectedCompanyChoice || !createNewCompanyChoice || !cancelCompanyChoice) {
+    return Promise.resolve("update");
+  }
+
+  return new Promise((resolve) => {
+    const close = (choice) => {
+      companyUrlChoiceModal.hidden = true;
+      updateSelectedCompanyChoice.removeEventListener("click", updateHandler);
+      createNewCompanyChoice.removeEventListener("click", createHandler);
+      cancelCompanyChoice.removeEventListener("click", cancelHandler);
+      document.removeEventListener("keydown", escapeHandler);
+      resolve(choice);
+    };
+    const updateHandler = () => close("update");
+    const createHandler = () => close("create");
+    const cancelHandler = () => close("cancel");
+    const escapeHandler = (event) => {
+      if (event.key === "Escape") close("cancel");
+    };
+
+    companyUrlChoiceModal.hidden = false;
+    updateSelectedCompanyChoice.focus();
+    updateSelectedCompanyChoice.addEventListener("click", updateHandler);
+    createNewCompanyChoice.addEventListener("click", createHandler);
+    cancelCompanyChoice.addEventListener("click", cancelHandler);
+    document.addEventListener("keydown", escapeHandler);
+  });
+}
+
+async function ensureCompanyForKnowledgeBuild() {
+  if (!selectedCompany) return createCompanyFromKnowledgeUrl();
+  if (selectedCompanyMatchesKnowledgeUrl()) return selectedCompany;
+
+  const choice = await askCompanyUrlChoice();
+  if (choice === "cancel") return null;
+  if (choice === "create") return createCompanyFromKnowledgeUrl();
+
+  setStatus(knowledgeStatus, `Updating ${selectedCompany.company_name} with intelligence from this website URL...`, "neutral");
+  return selectedCompany;
 }
 
 function renderRecommendation(recommendation) {
@@ -746,6 +846,7 @@ async function generateContent(event) {
     setStatus(statusMessage, "Content generated. You can edit it below before copying or saving.", "success");
     copyButton.disabled = false;
     saveContentButton.disabled = false;
+    updateLinkedInButtons();
   } catch (error) {
     setStatus(statusMessage, error.message, "error");
     sourceBadge.textContent = "Error";
@@ -763,12 +864,17 @@ async function buildKnowledge(event) {
     return;
   }
 
-  setLoading(knowledgeButton, true, "Reading pages...", "Build Knowledge Profile");
+  setLoading(knowledgeButton, true, "Reading pages...", "Build Intelligence Profile");
   setStatus(knowledgeStatus, "Preparing the company profile and reading website pages...", "neutral");
   profileBadge.textContent = "Working";
 
   try {
-    await ensureCompanyForKnowledgeBuild();
+    const companyForBuild = await ensureCompanyForKnowledgeBuild();
+    if (!companyForBuild) {
+      setStatus(knowledgeStatus, "Company intelligence build cancelled.", "neutral");
+      profileBadge.textContent = selectedCompany?.profile?.output ? "Saved" : "Ready";
+      return;
+    }
     setStatus(knowledgeStatus, "Fetching pages and extracting the selected company's website profile...", "neutral");
     const data = await postJson("/api/build-knowledge", { urls: knowledgeUrls.value, ...getCompanyRequestContext() });
     saveKnowledgeToLocalStorage(data.output);
@@ -787,7 +893,7 @@ async function buildKnowledge(event) {
     setStatus(knowledgeStatus, error.message, "error");
     profileBadge.textContent = "Error";
   } finally {
-    setLoading(knowledgeButton, false, "Reading pages...", "Build Knowledge Profile");
+    setLoading(knowledgeButton, false, "Reading pages...", "Build Intelligence Profile");
   }
 }
 
@@ -994,6 +1100,140 @@ async function copyText(textarea, statusElement) {
   }
 }
 
+function updateLinkedInButtons() {
+  if (!connectLinkedInButton || !postLinkedInButton || !linkedinStatus) return;
+  const hasDraft = Boolean(output.value.trim());
+  if (!linkedInConnection.configured) {
+    connectLinkedInButton.hidden = false;
+    connectLinkedInButton.disabled = true;
+    postLinkedInButton.hidden = true;
+    setStatus(linkedinStatus, "LinkedIn posting is not configured yet.", "neutral");
+    return;
+  }
+
+  connectLinkedInButton.hidden = linkedInConnection.connected;
+  connectLinkedInButton.disabled = false;
+  postLinkedInButton.hidden = !linkedInConnection.connected;
+  postLinkedInButton.disabled = !linkedInConnection.connected || !hasDraft;
+
+  if (linkedInConnection.connected) {
+    setStatus(linkedinStatus, `LinkedIn connected: ${linkedInConnection.account?.name || "LinkedIn member"}.`, "success");
+  } else {
+    setStatus(linkedinStatus, "Connect LinkedIn once to publish approved drafts from this workspace.", "neutral");
+  }
+}
+
+async function checkLinkedInStatus() {
+  if (!currentSession) {
+    linkedInConnection = { configured: false, connected: false, account: null };
+    updateLinkedInButtons();
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/linkedin/status", { headers: authHeaders() });
+    const data = await response.json();
+    linkedInConnection = {
+      configured: Boolean(data.configured),
+      connected: Boolean(data.connected),
+      account: data.account || null,
+    };
+  } catch {
+    linkedInConnection = { configured: false, connected: false, account: null };
+  }
+  updateLinkedInButtons();
+}
+
+async function connectLinkedIn() {
+  if (!currentSession) {
+    setStatus(linkedinStatus, "Please sign in before connecting LinkedIn.", "error");
+    return;
+  }
+
+  connectLinkedInButton.disabled = true;
+  setStatus(linkedinStatus, "Opening LinkedIn connection...", "neutral");
+  try {
+    const data = await postJson("/api/linkedin/connect-url", {});
+    window.location.href = data.authorizationUrl;
+  } catch (error) {
+    connectLinkedInButton.disabled = false;
+    setStatus(linkedinStatus, error.message || "LinkedIn connection could not be started. Please try again.", "error");
+  }
+}
+
+function askLinkedInPostConfirmation() {
+  if (!linkedInPostModal || !confirmLinkedInPostButton || !cancelLinkedInPostButton || !linkedInPostPreview) {
+    return Promise.resolve(window.confirm("Post to LinkedIn?"));
+  }
+
+  linkedInPostAccount.textContent = `Posting as ${linkedInConnection.account?.name || "LinkedIn member"}`;
+  linkedInPostPreview.value = output.value.trim();
+
+  return new Promise((resolve) => {
+    const close = (confirmed) => {
+      linkedInPostModal.hidden = true;
+      confirmLinkedInPostButton.removeEventListener("click", confirmHandler);
+      cancelLinkedInPostButton.removeEventListener("click", cancelHandler);
+      document.removeEventListener("keydown", escapeHandler);
+      resolve(confirmed);
+    };
+    const confirmHandler = () => close(true);
+    const cancelHandler = () => close(false);
+    const escapeHandler = (event) => {
+      if (event.key === "Escape") close(false);
+    };
+
+    linkedInPostModal.hidden = false;
+    confirmLinkedInPostButton.focus();
+    confirmLinkedInPostButton.addEventListener("click", confirmHandler);
+    cancelLinkedInPostButton.addEventListener("click", cancelHandler);
+    document.addEventListener("keydown", escapeHandler);
+  });
+}
+
+async function postToLinkedIn() {
+  const postText = output.value.trim();
+  if (!postText) {
+    setStatus(linkedinStatus, "There is no draft to post yet.", "error");
+    return;
+  }
+  if (!linkedInConnection.connected) {
+    setStatus(linkedinStatus, "Please connect LinkedIn before posting.", "error");
+    await checkLinkedInStatus();
+    return;
+  }
+
+  const confirmed = await askLinkedInPostConfirmation();
+  if (!confirmed) return;
+
+  setLoading(confirmLinkedInPostButton, true, "Posting...", "Post Now");
+  postLinkedInButton.disabled = true;
+  setStatus(linkedinStatus, "Publishing to LinkedIn...", "neutral");
+
+  try {
+    const data = await postJson("/api/linkedin/post", {
+      postText,
+      companyId: selectedCompany?.id || null,
+      savedContentId: lastGenerationMeta?.savedContentId || null,
+      generationMeta: lastGenerationMeta || null,
+    });
+    linkedInPostModal.hidden = true;
+    setStatus(linkedinStatus, "Posted to LinkedIn successfully.", "success");
+    sourceBadge.textContent = data.linkedinPostUrn ? "Published" : sourceBadge.textContent;
+  } catch (error) {
+    const message = /expired|reconnect/i.test(error.message || "")
+      ? "Your LinkedIn connection expired. Please reconnect."
+      : /not connected/i.test(error.message || "")
+        ? "Please connect LinkedIn before posting."
+      : "LinkedIn post could not be published. Please try again.";
+    setStatus(linkedinStatus, message, "error");
+    if (/expired|reconnect|not connected/i.test(error.message || "")) await checkLinkedInStatus();
+  } finally {
+    setLoading(confirmLinkedInPostButton, false, "Posting...", "Post Now");
+    updateLinkedInButtons();
+  }
+}
+
 async function saveGeneratedContent() {
   if (!output.value.trim()) {
     setStatus(statusMessage, "There is no generated content to save yet.", "error");
@@ -1004,7 +1244,7 @@ async function saveGeneratedContent() {
   setStatus(statusMessage, "Saving generated content to Supabase...", "neutral");
 
   try {
-    await postJson("/api/saved-marketing-content", {
+    const data = await postJson("/api/saved-marketing-content", {
       title: `${contentTypeSelect.value} - ${categorySelect.value}`,
       contentType: contentTypeSelect.value,
       businessCategory: categorySelect.value,
@@ -1020,7 +1260,8 @@ async function saveGeneratedContent() {
       status: "draft",
       companyId: selectedCompany?.id || null,
     });
-    setStatus(statusMessage, "Saved to Content Library.", "success");
+    lastGenerationMeta = { ...(lastGenerationMeta || {}), savedContentId: data.item?.id || null };
+    setStatus(statusMessage, "Saved to Approved Outputs.", "success");
     loadLibrary();
   } catch (error) {
     setStatus(statusMessage, `Generated successfully, but saving failed: ${error.message}`, "error");
@@ -1152,6 +1393,7 @@ function resetForm() {
   searchNote.textContent = "";
   copyButton.disabled = true;
   saveContentButton.disabled = true;
+  updateLinkedInButtons();
   sourceBadge.textContent = "Ready";
   setStatus(statusMessage, "Choose a content type, pick a category, and describe the goal.", "neutral");
 }
@@ -1190,7 +1432,8 @@ function setupTabs() {
   }
 
   buttons.forEach((button) => button.addEventListener("click", () => showTab(button.dataset.tab)));
-  showTab("generate");
+  const initialTab = window.location.hash.replace("#", "");
+  showTab(document.getElementById(initialTab) ? initialTab : "dashboard");
 }
 
 function updateKnowledgeUseBadge(isUsing) {
@@ -1286,6 +1529,7 @@ function selectCompany(company) {
     deleteCompanyButton.disabled = true;
     updateKnowledgeUseBadge(false);
   }
+  updateActionAvailability();
 }
 
 function canManageSelectedCompany() {
@@ -1427,8 +1671,10 @@ function splitLines(value) {
 }
 
 function init() {
-  document.querySelector("#subtitle").textContent = COMPANY_DETAILS.subtitle;
-  document.querySelector("#positioning").textContent = COMPANY_DETAILS.positioning;
+  const subtitleElement = document.querySelector("#subtitle");
+  const positioningElement = document.querySelector("#positioning");
+  if (subtitleElement) subtitleElement.textContent = COMPANY_DETAILS.subtitle;
+  if (positioningElement) positioningElement.textContent = COMPANY_DETAILS.positioning;
   fillSelect(contentTypeSelect, CONTENT_TYPES);
   fillSelect(categorySelect, BUSINESS_CATEGORIES);
   fillSelect(generateTargetAudience, TARGET_AUDIENCES);
@@ -1472,6 +1718,9 @@ function init() {
   resetButton.addEventListener("click", resetForm);
   copyButton.addEventListener("click", () => copyText(output, statusMessage));
   saveContentButton.addEventListener("click", saveGeneratedContent);
+  connectLinkedInButton.addEventListener("click", connectLinkedIn);
+  postLinkedInButton.addEventListener("click", postToLinkedIn);
+  output.addEventListener("input", updateLinkedInButtons);
 
   knowledgeForm.addEventListener("submit", buildKnowledge);
   copyKnowledgeButton.addEventListener("click", () => copyText(knowledgeOutput, knowledgeStatus));
@@ -1501,7 +1750,7 @@ function init() {
   resetMarketForm();
   resetPlannerForm();
   setAuthMode("signin");
-  setStatus(knowledgeStatus, "Enter public company URLs to build a reusable Company Business Brain.", "neutral");
+  setStatus(knowledgeStatus, "Enter public company URLs to enrich the selected company's Intelligence Profile.", "neutral");
   setStatus(reviewStatus, "Enter a page URL to get a focused content and SEO review.", "neutral");
   setStatus(competitorStatus, "Enter competitor URLs to compare positioning, CTAs, trust signals, and gaps.", "neutral");
   setStatus(libraryStatus, "Load saved generated content from Supabase.", "neutral");

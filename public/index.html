@@ -10,7 +10,7 @@
   <body>
     <section id="authView" class="auth-view">
       <form id="authForm" class="auth-card">
-        <p class="eyebrow">Secure workspace</p>
+        <p class="eyebrow">Secure AI workspace</p>
         <h1>CygniSoft AI Agent</h1>
         <p id="authIntro">Sign in to your workspace.</p>
         <div id="authMessage" class="auth-message" data-type="info" hidden>
@@ -47,519 +47,505 @@
     </section>
 
     <main id="appShell" class="app-shell" hidden>
-      <section class="user-bar" aria-label="User session">
-        <div>
-          <strong id="userEmail">Not signed in</strong>
-          <span id="adminBadge" class="badge" hidden>Admin</span>
-          <p>You only see companies you created or have access to.</p>
+      <aside class="sidebar" aria-label="Primary navigation">
+        <div class="brand-lockup">
+          <span class="brand-mark">A</span>
+          <div>
+            <strong>Executive Growth OS</strong>
+            <p>AI Business Platform</p>
+          </div>
         </div>
-        <button id="logoutButton" class="secondary-button" type="button">Log Out</button>
-      </section>
-
-      <section class="hero" aria-labelledby="appTitle">
-        <div>
-          <p class="eyebrow">Marketing workspace</p>
-          <h1 id="appTitle">CygniSoft AI Agent</h1>
-          <p id="subtitle" class="subtitle"></p>
+        <nav class="sidebar-nav">
+          <button class="tab-button is-active" type="button" data-tab="dashboard">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V20a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-8.5Z"/></svg>
+            <span>Command Center</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="companies">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2M4 9h16v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9Zm7 0v12"/></svg>
+            <span>Portfolio</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="knowledge">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V9m5 11V4m5 16v-7m5 7V7"/></svg>
+            <span>Intelligence Profile</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="generate">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6V3Zm8 0v5h5M9 13h6M9 17h6"/></svg>
+            <span>Strategic Outputs</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="library">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 7 3v6c0 4.4-2.8 7.2-7 9-4.2-1.8-7-4.6-7-9V6l7-3Zm-3 9 2 2 4-4"/></svg>
+            <span>Approved Outputs</span>
+          </button>
+          <button class="tab-button" type="button" data-tab="settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm8 4a8 8 0 0 0-.1-1.2l2-1.5-2-3.5-2.4 1a8 8 0 0 0-2-1.2L15.2 3h-4l-.4 2.6a8 8 0 0 0-2 1.2l-2.4-1-2 3.5 2 1.5A8 8 0 0 0 6.3 12c0 .4 0 .8.1 1.2l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 2 1.2l.4 2.6h4l.4-2.6a8 8 0 0 0 2-1.2l2.4 1 2-3.5-2-1.5c.1-.4.1-.8.1-1.2Z"/></svg>
+            <span>Settings</span>
+          </button>
+        </nav>
+        <div class="pro-tip-card">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 5-8 13L4 8l8-5Zm0 0v18M4 8h16"/></svg>
+          <strong>Pro Tip</strong>
+          <p>Complete your company context to unlock tailored intelligence.</p>
+          <button class="tab-button pro-tip-link" type="button" data-tab="companies">Go to Company Context</button>
         </div>
-        <div class="positioning" aria-label="Core positioning">
-          <span>Version 2</span>
-          <strong id="positioning"></strong>
-        </div>
-      </section>
+      </aside>
 
-      <section class="company-bar" aria-label="Company profile selector">
-        <div>
-          <p class="eyebrow">Company profile</p>
-          <div class="company-selector-row">
-            <select id="companySelect" aria-label="Select company profile"></select>
-            <button id="createCompanyButton" class="secondary-button" type="button">Create Company Profile</button>
-            <button id="editCompanyButton" class="secondary-button" type="button">Edit Company Profile</button>
-            <button id="deleteCompanyButton" class="danger-button" type="button">Delete Company Profile</button>
-          </div>
-          <span id="selectedCompanyBadge" class="knowledge-pill">Please create or select a company profile first.</span>
-          <span id="companyVisibilityBadge" class="badge">Private company</span>
-        </div>
-        <form id="companyForm" class="company-form" hidden>
-          <div class="field-row">
-            <label for="companyNameInput">
-              <span>Company Name</span>
-              <input id="companyNameInput" type="text" placeholder="Example: CygniSoft" />
-            </label>
-            <label for="companyIndustryInput">
-              <span>Industry</span>
-              <input id="companyIndustryInput" type="text" placeholder="Example: Staffing and software" />
-            </label>
-          </div>
-          <label for="companyWebsiteUrlsInput" class="request-field">
-            <span>Website URLs</span>
-            <textarea id="companyWebsiteUrlsInput" rows="3" placeholder="One URL per line"></textarea>
-          </label>
-          <div class="field-row request-field">
-            <label for="companyServicesInput">
-              <span>Services</span>
-              <textarea id="companyServicesInput" rows="4" placeholder="One service per line"></textarea>
-            </label>
-            <label for="companyProductsInput">
-              <span>Products/Solutions</span>
-              <textarea id="companyProductsInput" rows="4" placeholder="One product or solution per line"></textarea>
-            </label>
-          </div>
-          <div class="field-row request-field">
-            <label for="companyAudienceInput">
-              <span>Target Audience</span>
-              <textarea id="companyAudienceInput" rows="4" placeholder="One audience per line"></textarea>
-            </label>
-            <label for="companyCompetitorsInput">
-              <span>Competitors</span>
-              <textarea id="companyCompetitorsInput" rows="4" placeholder="One competitor per line or URL"></textarea>
-            </label>
-          </div>
-          <label for="companyToneInput" class="request-field">
-            <span>Brand Tone</span>
-            <input id="companyToneInput" type="text" placeholder="Professional, clear, friendly, not too salesy" />
-          </label>
-          <label for="companyVisibilityInput" class="request-field">
-            <span>Visibility</span>
-            <select id="companyVisibilityInput">
-              <option value="private">Private</option>
-              <option value="shared">Shared</option>
-              <option value="public_demo">Demo</option>
-            </select>
-          </label>
-          <label for="companyNotesInput" class="request-field">
-            <span>Notes</span>
-            <textarea id="companyNotesInput" rows="4"></textarea>
-          </label>
-          <div class="actions">
-            <button id="saveCompanyButton" class="primary-button" type="submit">
-              <span class="spinner" hidden></span>
-              <span class="button-text">Save Company Profile</span>
-            </button>
-            <button id="cancelCompanyButton" class="secondary-button" type="button">Cancel</button>
-          </div>
-          <p id="companyStatus" class="status" data-type="neutral" role="status"></p>
-          <div class="member-placeholder">
-            <strong>Manage Members</strong>
-            <p>Member management is ready for Supabase policies. Add users to `company_members` with owner, editor, or viewer roles.</p>
-          </div>
-        </form>
-      </section>
-
-      <nav class="tabs" aria-label="Agent modes">
-        <button class="tab-button" type="button" data-tab="generate">Generate Content</button>
-        <button class="tab-button" type="button" data-tab="knowledge">Build Company Profile</button>
-        <button class="tab-button" type="button" data-tab="review">Website Review</button>
-        <button class="tab-button" type="button" data-tab="competitor">Competitor Review</button>
-        <button class="tab-button" type="button" data-tab="market">Market & Hiring Trends</button>
-        <button class="tab-button" type="button" data-tab="planner">Lead & Campaign Planner</button>
-        <button class="tab-button" type="button" data-tab="library">Content Library</button>
-      </nav>
-
-      <section id="generate" class="tab-panel workspace" aria-label="Marketing content generator">
-        <form id="generatorForm" class="generator-panel">
-          <div class="panel-heading">
-            <p class="eyebrow">Version 1 generator</p>
-            <h2>Generate Marketing Content</h2>
-            <span id="knowledgeUseBadge" class="knowledge-pill">Please create or select a company profile first.</span>
-          </div>
-
-          <div class="field-row">
-            <label for="contentType">
-              <span>Content Type</span>
-              <select id="contentType" name="contentType"></select>
-            </label>
-
-            <label for="category">
-              <span>Business Category</span>
-              <select id="category" name="category"></select>
-            </label>
-          </div>
-
-          <div class="field-row">
-            <label for="generateTargetAudience">
-              <span>Target Audience</span>
-              <select id="generateTargetAudience" name="targetAudience"></select>
-            </label>
-
-            <label for="generateRegion">
-              <span>Region</span>
-              <input id="generateRegion" name="region" type="text" placeholder="Example: Ontario, GTA, Toronto" />
-            </label>
-          </div>
-
-          <div class="field-row">
-            <label for="generateCampaignGoal">
-              <span>Campaign Goal</span>
-              <select id="generateCampaignGoal" name="campaignGoal"></select>
-            </label>
-
-            <label for="generateTone">
-              <span>Tone</span>
-              <select id="generateTone" name="tone"></select>
-            </label>
-          </div>
-
-          <div class="field-row">
-            <label for="variationCount">
-              <span>Number of Variations</span>
-              <select id="variationCount" name="variationCount"></select>
-            </label>
-          </div>
-
-          <div class="option-grid" aria-label="Generation options">
-            <label class="check-option" for="marketAwareMode">
-              <input id="marketAwareMode" name="marketAwareMode" type="checkbox" checked />
-              <span>Market-Aware Mode</span>
-            </label>
-            <label class="check-option" for="suggestBestService">
-              <input id="suggestBestService" name="suggestBestService" type="checkbox" checked />
-              <span>Suggest Best Service</span>
-            </label>
-            <label class="check-option" for="useLiveSearch">
-              <input id="useLiveSearch" name="useLiveSearch" type="checkbox" />
-              <span>Use live web/search trends</span>
-            </label>
-          </div>
-
-          <label for="userRequest" class="request-field">
-            <span>User Request</span>
-            <textarea
-              id="userRequest"
-              name="userRequest"
-              rows="8"
-              placeholder="Example: Create a LinkedIn post for clinics that struggle to find reliable staff."
-            ></textarea>
-          </label>
-
-          <div class="actions">
-            <button id="generateButton" class="primary-button" type="submit">
-              <span class="spinner" hidden></span>
-              <span class="button-text">Generate Marketing Content</span>
-            </button>
-            <button id="resetButton" class="secondary-button" type="button">Reset</button>
-          </div>
-
-          <p id="statusMessage" class="status" data-type="neutral" role="status"></p>
-          <p id="searchNote" class="status" data-type="neutral"></p>
-        </form>
-
-        <section class="output-panel" aria-labelledby="outputTitle">
-          <div class="output-header">
-            <div>
-              <p class="eyebrow">Editable output</p>
-              <h2 id="outputTitle">Generated Marketing Content</h2>
+      <div class="app-main">
+        <section class="topbar" aria-label="Workspace status">
+          <div>
+            <p class="eyebrow">Active Company Context</p>
+            <div class="context-controls">
+              <select id="companySelect" class="company-pill-select" aria-label="Select company profile"></select>
+              <span id="companyVisibilityBadge" class="badge">Private company</span>
             </div>
-            <span id="sourceBadge" class="badge">Ready</span>
+            <span id="selectedCompanyBadge" class="knowledge-pill">Please create or select a company profile first.</span>
           </div>
-
-          <div id="recommendationPanel" class="score-panel" hidden>
-            <p class="eyebrow">Promotion opportunity scoring</p>
-            <pre id="recommendationOutput"></pre>
-          </div>
-
-          <div id="qualityPanel" class="score-panel" hidden>
-            <p class="eyebrow">Content quality score</p>
-            <pre id="qualityOutput"></pre>
-          </div>
-
-          <textarea
-            id="output"
-            rows="20"
-            spellcheck="true"
-            placeholder="Your generated content will appear here. You can edit it before copying."
-          ></textarea>
-
-          <div class="output-actions">
-            <button id="copyButton" class="secondary-button" type="button" disabled>Copy Content</button>
-            <button id="saveContentButton" class="secondary-button" type="button" disabled>Save to Content Library</button>
+          <div class="user-cluster">
+            <div>
+              <strong id="userEmail">Not signed in</strong>
+              <span id="adminBadge" class="badge" hidden>Admin</span>
+              <p>You only see companies you created or have access to.</p>
+            </div>
+            <button id="logoutButton" class="secondary-button" type="button">Log Out</button>
           </div>
         </section>
-      </section>
 
-      <section id="knowledge" class="tab-panel tool-layout" aria-label="Website knowledge builder">
-        <form id="knowledgeForm" class="generator-panel">
-          <div class="panel-heading">
-            <p class="eyebrow">Company Business Brain</p>
-            <h2>Build Company Profile</h2>
-          </div>
-
-          <label for="knowledgeUrls">
-            <span>Company Website URLs</span>
-            <textarea
-              id="knowledgeUrls"
-              rows="10"
-              placeholder="Enter one company URL per line, such as home, about, services, careers, and contact pages."
-            ></textarea>
-          </label>
-
-          <div class="actions">
-            <button id="knowledgeButton" class="primary-button" type="submit">
-              <span class="spinner" hidden></span>
-              <span class="button-text">Build Knowledge Profile</span>
-            </button>
-          </div>
-          <p id="knowledgeStatus" class="status" data-type="neutral" role="status"></p>
-        </form>
-
-        <section class="output-panel">
-          <div class="output-header">
-            <div>
-              <p class="eyebrow">Saved profile</p>
-              <h2>Generated Company Business Brain</h2>
+        <section id="dashboard" class="tab-panel dashboard-panel" aria-label="Dashboard overview">
+          <div class="page-heading">
+            <div class="hero-copy">
+              <p class="eyebrow">AI business growth platform</p>
+              <h1 id="appTitle">Turn company intelligence into <span>revenue-ready</span> strategic advantage.</h1>
+              <p id="subtitle" class="subtitle">
+                Unify website intelligence, competitor signals, market context, and campaign planning into executive-grade outputs your team can act on.
+              </p>
+              <div class="hero-actions">
+                <button class="tab-button primary-button hero-primary" type="button" data-tab="generate">Start Strategic Brief</button>
+                <button class="tab-button hero-secondary" type="button" data-tab="knowledge">Explore Intelligence</button>
+              </div>
             </div>
-            <span id="profileBadge" class="badge">Not built</span>
-          </div>
-          <textarea id="knowledgeOutput" rows="22" spellcheck="true"></textarea>
-          <div class="output-actions">
-            <button id="copyKnowledgeButton" class="secondary-button" type="button">Copy Profile</button>
-            <button id="editKnowledgeButton" class="secondary-button" type="button">Edit Profile</button>
-            <button id="saveKnowledgeButton" class="secondary-button" type="button" disabled>Save Knowledge</button>
-            <button id="updateKnowledgeButton" class="secondary-button" type="button" disabled>Update Knowledge</button>
-            <button id="clearKnowledgeButton" class="danger-button" type="button">Clear Knowledge</button>
-          </div>
-        </section>
-      </section>
-
-      <section id="review" class="tab-panel tool-layout" aria-label="Website review">
-        <form id="reviewForm" class="generator-panel">
-          <div class="panel-heading">
-            <p class="eyebrow">Website Review</p>
-            <h2>Review a Company Page</h2>
-          </div>
-
-          <label for="reviewUrl">
-            <span>Page URL</span>
-            <input id="reviewUrl" type="url" placeholder="https://example.com/about" />
-          </label>
-
-          <div class="actions">
-            <button id="reviewButton" class="primary-button" type="submit">
-              <span class="spinner" hidden></span>
-              <span class="button-text">Review Website</span>
-            </button>
-          </div>
-          <p id="reviewStatus" class="status" data-type="neutral" role="status"></p>
-        </form>
-
-        <section class="output-panel">
-          <div class="output-header">
-            <div>
-              <p class="eyebrow">Page audit</p>
-              <h2>Website Review Output</h2>
+            <div class="intelligence-visual" aria-hidden="true">
+              <span class="signal-label signal-one">Website Intelligence</span>
+              <span class="signal-label signal-two">Competitor Signals</span>
+              <span class="signal-label signal-three">Market & Hiring Trends</span>
+              <span class="signal-label signal-four">Campaign Planning</span>
+              <div class="radar-core">
+                <span></span>
+              </div>
             </div>
-            <span id="reviewBadge" class="badge">Ready</span>
-          </div>
-          <textarea id="reviewOutput" rows="22" spellcheck="true"></textarea>
-          <div class="output-actions">
-            <button id="copyReviewButton" class="secondary-button" type="button">Copy Review</button>
-          </div>
-        </section>
-      </section>
-
-      <section id="competitor" class="tab-panel tool-layout" aria-label="Competitor review">
-        <form id="competitorForm" class="generator-panel">
-          <div class="panel-heading">
-            <p class="eyebrow">Competitor Review</p>
-            <h2>Compare Website Positioning</h2>
           </div>
 
-          <label for="cygnisoftCompareUrls">
-            <span>Company URLs</span>
-            <textarea id="cygnisoftCompareUrls" rows="6" placeholder="Optional if you already built a company profile. One URL per line."></textarea>
-          </label>
-
-          <label for="competitorUrls" class="request-field">
-            <span>Competitor URLs</span>
-            <textarea id="competitorUrls" rows="8" placeholder="Enter competitor website URLs, one per line."></textarea>
-          </label>
-
-          <div class="actions">
-            <button id="competitorButton" class="primary-button" type="submit">
-              <span class="spinner" hidden></span>
-              <span class="button-text">Run Competitor Review</span>
+          <section class="step-grid" aria-label="Recommended workflow">
+            <button class="step-card tab-button" type="button" data-tab="companies">
+              <span class="step-number">1</span>
+              <div><small>Step 1</small><strong>Company Profile</strong><p>Create or select the company this workspace should use.</p></div>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 11a4 4 0 1 0-8 0m8 0a4 4 0 1 1-8 0m8 0h3m-14 0h3M6 20c1-3 3-5 6-5s5 2 6 5"/></svg>
+              <em>Open</em>
             </button>
-          </div>
-          <p id="competitorStatus" class="status" data-type="neutral" role="status"></p>
-        </form>
-
-        <section class="output-panel">
-          <div class="output-header">
-            <div>
-              <p class="eyebrow">Comparison</p>
-              <h2>Competitor Review Output</h2>
-            </div>
-            <span id="competitorBadge" class="badge">Ready</span>
-          </div>
-          <textarea id="competitorOutput" rows="22" spellcheck="true"></textarea>
-          <div class="output-actions">
-            <button id="copyCompetitorButton" class="secondary-button" type="button">Copy Review</button>
-          </div>
-        </section>
-      </section>
-
-      <section id="market" class="tab-panel tool-layout" aria-label="Market and hiring trends">
-        <form id="marketForm" class="generator-panel">
-          <div class="panel-heading">
-            <p class="eyebrow">Version 4</p>
-            <h2>Market & Hiring Trends</h2>
-            <span id="marketKnowledgeBadge" class="knowledge-pill">Please create or select a company profile first.</span>
-          </div>
-
-          <div class="field-row">
-            <label for="marketIndustry">
-              <span>Industry</span>
-              <select id="marketIndustry"></select>
-            </label>
-
-            <label for="researchFocus">
-              <span>Research Focus</span>
-              <select id="researchFocus"></select>
-            </label>
-          </div>
-
-          <label for="marketRegion" class="request-field">
-            <span>Region</span>
-            <input id="marketRegion" type="text" placeholder="Example: Canada, Ontario, GTA, Toronto, Mississauga" />
-          </label>
-
-          <label for="marketNotes" class="request-field">
-            <span>Notes</span>
-            <textarea id="marketNotes" rows="7" placeholder="Optional: add specific context, services, seasonality, or audience notes."></textarea>
-          </label>
-
-          <div class="actions">
-            <button id="marketButton" class="primary-button" type="submit">
-              <span class="spinner" hidden></span>
-              <span class="button-text">Generate Trend Research</span>
+            <button class="step-card tab-button" type="button" data-tab="knowledge">
+              <span class="step-number">2</span>
+              <div><small>Step 2</small><strong>Intelligence Profile</strong><p>Analyze website URLs and enrich the selected company with AI-ready business context.</p></div>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V9m5 11V4m5 16v-7m5 7V7"/></svg>
+              <em>Open</em>
             </button>
-            <button id="resetMarketButton" class="secondary-button" type="button">Reset</button>
-          </div>
-          <p id="marketStatus" class="status" data-type="neutral" role="status"></p>
-        </form>
-
-        <section class="output-panel">
-          <div class="output-header">
-            <div>
-              <p class="eyebrow">Research output</p>
-              <h2>Market & Hiring Trends Output</h2>
-            </div>
-            <span id="marketBadge" class="badge">Ready</span>
-          </div>
-          <textarea id="marketOutput" rows="22" spellcheck="true"></textarea>
-          <div class="output-actions">
-            <button id="copyMarketButton" class="secondary-button" type="button">Copy Research</button>
-          </div>
-        </section>
-      </section>
-
-      <section id="planner" class="tab-panel tool-layout" aria-label="Lead and campaign planner">
-        <form id="plannerForm" class="generator-panel">
-          <div class="panel-heading">
-            <p class="eyebrow">Version 5</p>
-            <h2>Lead & Campaign Planner</h2>
-            <span id="plannerKnowledgeBadge" class="knowledge-pill">Please create or select a company profile first.</span>
-          </div>
-
-          <div class="field-row">
-            <label for="plannerService">
-              <span>Service/Product</span>
-              <select id="plannerService"></select>
-            </label>
-
-            <label for="targetAudience">
-              <span>Target Audience</span>
-              <select id="targetAudience"></select>
-            </label>
-          </div>
-
-          <div class="field-row request-field">
-            <label for="campaignGoal">
-              <span>Campaign Goal</span>
-              <select id="campaignGoal"></select>
-            </label>
-
-            <label for="campaignDuration">
-              <span>Campaign Duration</span>
-              <select id="campaignDuration"></select>
-            </label>
-          </div>
-
-          <label for="plannerRegion" class="request-field">
-            <span>Region</span>
-            <input id="plannerRegion" type="text" placeholder="Example: Ontario, GTA, Toronto, Mississauga, Brampton" />
-          </label>
-
-          <label for="plannerNotes" class="request-field">
-            <span>Notes</span>
-            <textarea id="plannerNotes" rows="7" placeholder="Optional: add offer details, target niche, constraints, or campaign notes."></textarea>
-          </label>
-
-          <div class="actions">
-            <button id="plannerButton" class="primary-button" type="submit">
-              <span class="spinner" hidden></span>
-              <span class="button-text">Generate Campaign Plan</span>
+            <button class="step-card tab-button" type="button" data-tab="generate">
+              <span class="step-number">3</span>
+              <div><small>Step 3</small><strong>Create strategic outputs</strong><p>Generate board-ready content, research, and campaign recommendations.</p></div>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6V3Zm8 0v5h5M9 13h6M9 17h6"/></svg>
+              <em>Open</em>
             </button>
-            <button id="resetPlannerButton" class="secondary-button" type="button">Reset</button>
-          </div>
-          <p id="plannerStatus" class="status" data-type="neutral" role="status"></p>
-        </form>
-
-        <section class="output-panel">
-          <div class="output-header">
-            <div>
-              <p class="eyebrow">Campaign output</p>
-              <h2>Lead & Campaign Plan Output</h2>
-            </div>
-            <span id="plannerBadge" class="badge">Ready</span>
-          </div>
-          <textarea id="plannerOutput" rows="22" spellcheck="true"></textarea>
-          <div class="output-actions">
-            <button id="copyPlannerButton" class="secondary-button" type="button">Copy Campaign Plan</button>
-          </div>
-        </section>
-      </section>
-
-      <section id="library" class="tab-panel tool-layout" aria-label="Content library">
-        <form id="libraryFilterForm" class="generator-panel">
-          <div class="panel-heading">
-            <p class="eyebrow">Database</p>
-            <h2>Content Library</h2>
-          </div>
-
-          <div class="field-row">
-            <label for="libraryContentType">
-              <span>Filter by Content Type</span>
-              <select id="libraryContentType"></select>
-            </label>
-
-            <label for="libraryBusinessCategory">
-              <span>Filter by Business Category</span>
-              <select id="libraryBusinessCategory"></select>
-            </label>
-          </div>
-
-          <div class="actions">
-            <button id="loadLibraryButton" class="primary-button" type="submit">
-              <span class="spinner" hidden></span>
-              <span class="button-text">Load Saved Content</span>
+            <button class="step-card tab-button" type="button" data-tab="library">
+              <span class="step-number">4</span>
+              <div><small>Step 4</small><strong>Approve and reuse</strong><p>Keep high-confidence assets organized by company and campaign.</p></div>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 7 3v6c0 4.4-2.8 7.2-7 9-4.2-1.8-7-4.6-7-9V6l7-3Zm-3 9 2 2 4-4"/></svg>
+              <em>Open</em>
             </button>
-            <button id="resetLibraryButton" class="secondary-button" type="button">Reset Filters</button>
-          </div>
-          <p id="libraryStatus" class="status" data-type="neutral" role="status"></p>
-        </form>
+          </section>
 
-        <section class="output-panel">
-          <div class="output-header">
-            <div>
-              <p class="eyebrow">Saved output</p>
-              <h2>Saved Marketing Content</h2>
-            </div>
-            <span id="libraryBadge" class="badge">Ready</span>
-          </div>
-          <div id="libraryList" class="library-list"></div>
+          <section class="content-card-grid" aria-label="Content and research tools">
+            <button class="content-card tab-button" type="button" data-tab="review">
+              <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 0c2.5 2.4 3.8 5.4 3.8 9S14.5 18.6 12 21M12 3C9.5 5.4 8.2 8.4 8.2 12s1.3 6.6 3.8 9M3.6 9h16.8M3.6 15h16.8"/></svg></span>
+              <div><strong>Website Intelligence</strong><p>Assess messaging, SEO, conversion paths, and credibility signals.</p></div>
+              <em>›</em>
+            </button>
+            <button class="content-card tab-button" type="button" data-tab="competitor">
+              <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8 2a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM2 21c.8-4 3-6 6-6s5.2 2 6 6m-1-2c1-2.2 2.7-3.4 5-3.4 2 0 3.5 1 4 3.4"/></svg></span>
+              <div><strong>Competitor Review</strong><p>Map positioning, offers, trust signals, and whitespace.</p></div>
+              <em>›</em>
+            </button>
+            <button class="content-card tab-button" type="button" data-tab="market">
+              <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18h16M5 15l5-5 4 4 5-7M18 7h1v5"/></svg></span>
+              <div><strong>Market & Hiring Trends</strong><p>Distill external signals into actionable commercial insight.</p></div>
+              <em>›</em>
+            </button>
+            <button class="content-card tab-button" type="button" data-tab="planner">
+              <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21a9 9 0 1 0-9-9h9V3m0 9 6-6M17 6h1v5"/></svg></span>
+              <div><strong>Lead & Campaign Plan</strong><p>Shape audiences, channels, hooks, and activation steps.</p></div>
+              <em>›</em>
+            </button>
+            <button class="content-card tab-button" type="button" data-tab="generate">
+              <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-7l-5 4v-4H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2Z"/></svg></span>
+              <div><strong>Social Content</strong><p>Draft executive-grade social assets using company context.</p></div>
+              <em>›</em>
+            </button>
+            <button class="content-card tab-button" type="button" data-tab="generate">
+              <span class="feature-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4V6Zm0 0 8 7 8-7"/></svg></span>
+              <div><strong>Email Campaigns</strong><p>Create sharp outreach, nurture, and follow-up sequences.</p></div>
+              <em>›</em>
+            </button>
+          </section>
         </section>
-      </section>
+
+        <section id="companies" class="tab-panel" aria-label="Companies">
+          <section class="company-bar card">
+            <div>
+              <p class="eyebrow">Step 1</p>
+              <h2>Company Profile</h2>
+              <p class="section-copy">Create or select the company this workspace should use.</p>
+              <div class="company-selector-row">
+                <button id="createCompanyButton" class="secondary-button" type="button">Create Company Profile</button>
+                <button id="editCompanyButton" class="secondary-button" type="button">Edit Company Profile</button>
+                <button id="deleteCompanyButton" class="danger-button" type="button">Delete Company Profile</button>
+              </div>
+            </div>
+            <form id="companyForm" class="company-form" hidden>
+              <div class="field-row">
+                <label for="companyNameInput">
+                  <span>Company Name</span>
+                  <input id="companyNameInput" type="text" placeholder="Example: CygniSoft" />
+                </label>
+                <label for="companyIndustryInput">
+                  <span>Industry</span>
+                  <input id="companyIndustryInput" type="text" placeholder="Example: Staffing and software" />
+                </label>
+              </div>
+              <label for="companyWebsiteUrlsInput" class="request-field">
+                <span>Website URLs</span>
+                <textarea id="companyWebsiteUrlsInput" rows="3" placeholder="One URL per line"></textarea>
+              </label>
+              <div class="field-row request-field">
+                <label for="companyServicesInput">
+                  <span>Services</span>
+                  <textarea id="companyServicesInput" rows="4" placeholder="One service per line"></textarea>
+                </label>
+                <label for="companyProductsInput">
+                  <span>Products/Solutions</span>
+                  <textarea id="companyProductsInput" rows="4" placeholder="One product or solution per line"></textarea>
+                </label>
+              </div>
+              <div class="field-row request-field">
+                <label for="companyAudienceInput">
+                  <span>Target Audience</span>
+                  <textarea id="companyAudienceInput" rows="4" placeholder="One audience per line"></textarea>
+                </label>
+                <label for="companyCompetitorsInput">
+                  <span>Competitors</span>
+                  <textarea id="companyCompetitorsInput" rows="4" placeholder="One competitor per line or URL"></textarea>
+                </label>
+              </div>
+              <label for="companyToneInput" class="request-field">
+                <span>Brand Tone</span>
+                <input id="companyToneInput" type="text" placeholder="Professional, clear, friendly, not too salesy" />
+              </label>
+              <label for="companyVisibilityInput" class="request-field">
+                <span>Visibility</span>
+                <select id="companyVisibilityInput">
+                  <option value="private">Private</option>
+                  <option value="shared">Shared</option>
+                  <option value="public_demo">Demo</option>
+                </select>
+              </label>
+              <label for="companyNotesInput" class="request-field">
+                <span>Notes</span>
+                <textarea id="companyNotesInput" rows="4"></textarea>
+              </label>
+              <div class="actions">
+                <button id="saveCompanyButton" class="primary-button" type="submit">
+                  <span class="spinner" hidden></span>
+                  <span class="button-text">Save Company Profile</span>
+                </button>
+                <button id="cancelCompanyButton" class="secondary-button" type="button">Cancel</button>
+              </div>
+              <p id="companyStatus" class="status" data-type="neutral" role="status"></p>
+              <div class="member-placeholder">
+                <strong>Manage Members</strong>
+                <p>Member management is ready for Supabase policies. Add users to `company_members` with owner, editor, or viewer roles.</p>
+              </div>
+            </form>
+          </section>
+        </section>
+
+        <section id="knowledge" class="tab-panel tool-layout" aria-label="Company brain builder">
+          <form id="knowledgeForm" class="generator-panel">
+            <div class="panel-heading">
+              <p class="eyebrow">Step 2</p>
+              <h2>Intelligence Profile</h2>
+              <p class="section-copy">Analyze website URLs and enrich the selected company with AI-ready business context.</p>
+            </div>
+            <label for="knowledgeUrls">
+              <span>Company Website URLs</span>
+              <textarea id="knowledgeUrls" rows="10" placeholder="Enter one company URL per line, such as home, about, services, careers, and contact pages."></textarea>
+            </label>
+            <div class="actions">
+              <button id="knowledgeButton" class="primary-button" type="submit">
+                <span class="spinner" hidden></span>
+                <span class="button-text">Build Intelligence Profile</span>
+              </button>
+            </div>
+            <p id="knowledgeStatus" class="status" data-type="neutral" role="status"></p>
+          </form>
+          <section class="output-panel">
+            <div class="output-header">
+              <div>
+                <p class="eyebrow">Intelligence profile</p>
+                <h2>Company Intelligence Brief</h2>
+              </div>
+              <span id="profileBadge" class="badge">Not built</span>
+            </div>
+            <textarea id="knowledgeOutput" rows="22" spellcheck="true"></textarea>
+            <div class="output-actions">
+              <button id="copyKnowledgeButton" class="secondary-button" type="button">Copy Profile</button>
+              <button id="editKnowledgeButton" class="secondary-button" type="button">Edit Profile</button>
+              <button id="saveKnowledgeButton" class="secondary-button" type="button" disabled>Save Knowledge</button>
+              <button id="updateKnowledgeButton" class="secondary-button" type="button" disabled>Update Knowledge</button>
+              <button id="clearKnowledgeButton" class="danger-button" type="button">Clear Knowledge</button>
+            </div>
+          </section>
+        </section>
+
+        <section id="generate" class="tab-panel workspace strategic-workspace" aria-label="Strategic output studio">
+          <form id="generatorForm" class="generator-panel strategic-form">
+            <div class="panel-heading">
+              <p class="eyebrow">Step 3</p>
+              <h2>Create Strategic Outputs</h2>
+              <p class="section-copy">Create company-aware content, campaign ideas, and executive-ready messaging from the selected intelligence profile.</p>
+            </div>
+
+            <div class="intelligence-context-card">
+              <div>
+                <p class="eyebrow">Company context</p>
+                <span id="knowledgeUseBadge" class="knowledge-pill">Please create or select a company profile first.</span>
+              </div>
+              <div class="context-signal-list" aria-label="Context used for generation">
+                <span>Company profile</span>
+                <span>Intelligence brief</span>
+                <span>Strategy settings</span>
+              </div>
+            </div>
+
+            <div class="form-section">
+              <div class="form-section-title">
+                <span>01</span>
+                <div>
+                  <strong>Output Direction</strong>
+                  <p>Choose the asset type and business category.</p>
+                </div>
+              </div>
+              <div class="field-row">
+                <label for="contentType"><span>Output Type</span><select id="contentType" name="contentType"></select></label>
+                <label for="category"><span>Business Focus</span><select id="category" name="category"></select></label>
+              </div>
+            </div>
+
+            <div class="form-section">
+              <div class="form-section-title">
+                <span>02</span>
+                <div>
+                  <strong>Audience & Market</strong>
+                  <p>Shape the output for the right audience, region, goal, and tone.</p>
+                </div>
+              </div>
+              <div class="field-row">
+                <label for="generateTargetAudience"><span>Target Audience</span><select id="generateTargetAudience" name="targetAudience"></select></label>
+                <label for="generateRegion"><span>Region</span><input id="generateRegion" name="region" type="text" placeholder="Example: Ontario, GTA, Toronto" /></label>
+              </div>
+              <div class="field-row">
+                <label for="generateCampaignGoal"><span>Campaign Goal</span><select id="generateCampaignGoal" name="campaignGoal"></select></label>
+                <label for="generateTone"><span>Tone</span><select id="generateTone" name="tone"></select></label>
+              </div>
+            </div>
+
+            <div class="form-section">
+              <div class="form-section-title">
+                <span>03</span>
+                <div>
+                  <strong>Intelligence Options</strong>
+                  <p>Control how much strategy context the generator should use.</p>
+                </div>
+              </div>
+              <div class="field-row single-field-row">
+                <label for="variationCount"><span>Number of Variations</span><select id="variationCount" name="variationCount"></select></label>
+              </div>
+              <div class="option-grid" aria-label="Generation options">
+                <label class="check-option" for="marketAwareMode"><input id="marketAwareMode" name="marketAwareMode" type="checkbox" checked /><span>Market-aware strategy</span></label>
+                <label class="check-option" for="suggestBestService"><input id="suggestBestService" name="suggestBestService" type="checkbox" checked /><span>Suggest best offer</span></label>
+                <label class="check-option" for="useLiveSearch"><input id="useLiveSearch" name="useLiveSearch" type="checkbox" /><span>Use live search signals</span></label>
+              </div>
+            </div>
+
+            <div class="form-section prompt-section">
+              <div class="form-section-title">
+                <span>04</span>
+                <div>
+                  <strong>Strategic Request</strong>
+                  <p>Describe the asset, audience need, offer, or campaign angle.</p>
+                </div>
+              </div>
+              <label for="userRequest" class="request-field">
+                <span>Request Brief</span>
+                <textarea id="userRequest" name="userRequest" rows="7" placeholder="Example: Create a LinkedIn post for clinic owners who need reliable healthcare staff without slowing down patient care."></textarea>
+              </label>
+            </div>
+
+            <div class="actions">
+              <button id="generateButton" class="primary-button" type="submit"><span class="spinner" hidden></span><span class="button-text">Create Strategic Output</span></button>
+              <button id="resetButton" class="secondary-button" type="button">Reset</button>
+            </div>
+            <p id="statusMessage" class="status" data-type="neutral" role="status"></p>
+            <p id="searchNote" class="status" data-type="neutral"></p>
+          </form>
+          <section class="output-panel strategic-output-panel" aria-labelledby="outputTitle">
+            <div class="output-header">
+              <div><p class="eyebrow">Editable executive draft</p><h2 id="outputTitle">Strategic Output Draft</h2></div>
+              <span id="sourceBadge" class="badge">Ready</span>
+            </div>
+            <div id="recommendationPanel" class="score-panel" hidden><p class="eyebrow">Promotion opportunity scoring</p><pre id="recommendationOutput"></pre></div>
+            <div id="qualityPanel" class="score-panel" hidden><p class="eyebrow">Content quality score</p><pre id="qualityOutput"></pre></div>
+            <textarea id="output" rows="20" spellcheck="true" placeholder="Your generated strategic output will appear here. You can refine it, copy it, or save it to Approved Outputs."></textarea>
+            <div class="output-actions">
+              <button id="copyButton" class="secondary-button" type="button" disabled>Copy Content</button>
+              <button id="saveContentButton" class="secondary-button" type="button" disabled>Save to Approved Outputs</button>
+              <button id="connectLinkedInButton" class="secondary-button linkedin-button" type="button">Connect LinkedIn</button>
+              <button id="postLinkedInButton" class="primary-button linkedin-button" type="button" disabled hidden>Post to LinkedIn</button>
+            </div>
+            <p id="linkedinStatus" class="status" data-type="neutral" role="status"></p>
+          </section>
+        </section>
+
+        <section id="review" class="tab-panel tool-layout" aria-label="Website review">
+          <form id="reviewForm" class="generator-panel">
+            <div class="panel-heading"><p class="eyebrow">Website Intelligence</p><h2>Review a Company Page</h2></div>
+            <label for="reviewUrl"><span>Page URL</span><input id="reviewUrl" type="url" placeholder="https://example.com/about" /></label>
+            <div class="actions"><button id="reviewButton" class="primary-button" type="submit"><span class="spinner" hidden></span><span class="button-text">Review Website</span></button></div>
+            <p id="reviewStatus" class="status" data-type="neutral" role="status"></p>
+          </form>
+          <section class="output-panel">
+            <div class="output-header"><div><p class="eyebrow">Page audit</p><h2>Website Intelligence Output</h2></div><span id="reviewBadge" class="badge">Ready</span></div>
+            <textarea id="reviewOutput" rows="22" spellcheck="true"></textarea>
+            <div class="output-actions"><button id="copyReviewButton" class="secondary-button" type="button">Copy Review</button></div>
+          </section>
+        </section>
+
+        <section id="competitor" class="tab-panel tool-layout" aria-label="Competitor review">
+          <form id="competitorForm" class="generator-panel">
+            <div class="panel-heading"><p class="eyebrow">Competitor Review</p><h2>Compare Website Positioning</h2></div>
+            <label for="cygnisoftCompareUrls"><span>Company URLs</span><textarea id="cygnisoftCompareUrls" rows="6" placeholder="Optional if you already built a company profile. One URL per line."></textarea></label>
+            <label for="competitorUrls" class="request-field"><span>Competitor URLs</span><textarea id="competitorUrls" rows="8" placeholder="Enter competitor website URLs, one per line."></textarea></label>
+            <div class="actions"><button id="competitorButton" class="primary-button" type="submit"><span class="spinner" hidden></span><span class="button-text">Run Competitor Review</span></button></div>
+            <p id="competitorStatus" class="status" data-type="neutral" role="status"></p>
+          </form>
+          <section class="output-panel">
+            <div class="output-header"><div><p class="eyebrow">Comparison</p><h2>Competitor Review Output</h2></div><span id="competitorBadge" class="badge">Ready</span></div>
+            <textarea id="competitorOutput" rows="22" spellcheck="true"></textarea>
+            <div class="output-actions"><button id="copyCompetitorButton" class="secondary-button" type="button">Copy Review</button></div>
+          </section>
+        </section>
+
+        <section id="market" class="tab-panel tool-layout" aria-label="Market and hiring trends">
+          <form id="marketForm" class="generator-panel">
+            <div class="panel-heading"><p class="eyebrow">Market Research</p><h2>Market & Hiring Trends</h2><span id="marketKnowledgeBadge" class="knowledge-pill">Please create or select a company profile first.</span></div>
+            <div class="field-row">
+              <label for="marketIndustry"><span>Industry</span><select id="marketIndustry"></select></label>
+              <label for="researchFocus"><span>Research Focus</span><select id="researchFocus"></select></label>
+            </div>
+            <label for="marketRegion" class="request-field"><span>Region</span><input id="marketRegion" type="text" placeholder="Example: Canada, Ontario, GTA, Toronto, Mississauga" /></label>
+            <label for="marketNotes" class="request-field"><span>Notes</span><textarea id="marketNotes" rows="7" placeholder="Optional: add specific context, services, seasonality, or audience notes."></textarea></label>
+            <div class="actions"><button id="marketButton" class="primary-button" type="submit"><span class="spinner" hidden></span><span class="button-text">Generate Trend Research</span></button><button id="resetMarketButton" class="secondary-button" type="button">Reset</button></div>
+            <p id="marketStatus" class="status" data-type="neutral" role="status"></p>
+          </form>
+          <section class="output-panel">
+            <div class="output-header"><div><p class="eyebrow">Research output</p><h2>Market & Hiring Trends Output</h2></div><span id="marketBadge" class="badge">Ready</span></div>
+            <textarea id="marketOutput" rows="22" spellcheck="true"></textarea>
+            <div class="output-actions"><button id="copyMarketButton" class="secondary-button" type="button">Copy Research</button></div>
+          </section>
+        </section>
+
+        <section id="planner" class="tab-panel tool-layout" aria-label="Lead and campaign planner">
+          <form id="plannerForm" class="generator-panel">
+            <div class="panel-heading"><p class="eyebrow">Campaign Strategy</p><h2>Lead & Campaign Plan</h2><span id="plannerKnowledgeBadge" class="knowledge-pill">Please create or select a company profile first.</span></div>
+            <div class="field-row">
+              <label for="plannerService"><span>Service/Product</span><select id="plannerService"></select></label>
+              <label for="targetAudience"><span>Target Audience</span><select id="targetAudience"></select></label>
+            </div>
+            <div class="field-row request-field">
+              <label for="campaignGoal"><span>Campaign Goal</span><select id="campaignGoal"></select></label>
+              <label for="campaignDuration"><span>Campaign Duration</span><select id="campaignDuration"></select></label>
+            </div>
+            <label for="plannerRegion" class="request-field"><span>Region</span><input id="plannerRegion" type="text" placeholder="Example: Ontario, GTA, Toronto, Mississauga, Brampton" /></label>
+            <label for="plannerNotes" class="request-field"><span>Notes</span><textarea id="plannerNotes" rows="7" placeholder="Optional: add offer details, target niche, constraints, or campaign notes."></textarea></label>
+            <div class="actions"><button id="plannerButton" class="primary-button" type="submit"><span class="spinner" hidden></span><span class="button-text">Generate Campaign Plan</span></button><button id="resetPlannerButton" class="secondary-button" type="button">Reset</button></div>
+            <p id="plannerStatus" class="status" data-type="neutral" role="status"></p>
+          </form>
+          <section class="output-panel">
+            <div class="output-header"><div><p class="eyebrow">Campaign output</p><h2>Lead & Campaign Plan Output</h2></div><span id="plannerBadge" class="badge">Ready</span></div>
+            <textarea id="plannerOutput" rows="22" spellcheck="true"></textarea>
+            <div class="output-actions"><button id="copyPlannerButton" class="secondary-button" type="button">Copy Campaign Plan</button></div>
+          </section>
+        </section>
+
+        <section id="library" class="tab-panel tool-layout" aria-label="Saved outputs">
+          <form id="libraryFilterForm" class="generator-panel">
+            <div class="panel-heading"><p class="eyebrow">Approved Outputs</p><h2>Content Library</h2></div>
+            <div class="field-row">
+              <label for="libraryContentType"><span>Filter by Content Type</span><select id="libraryContentType"></select></label>
+              <label for="libraryBusinessCategory"><span>Filter by Business Category</span><select id="libraryBusinessCategory"></select></label>
+            </div>
+            <div class="actions"><button id="loadLibraryButton" class="primary-button" type="submit"><span class="spinner" hidden></span><span class="button-text">Load Saved Content</span></button><button id="resetLibraryButton" class="secondary-button" type="button">Reset Filters</button></div>
+            <p id="libraryStatus" class="status" data-type="neutral" role="status"></p>
+          </form>
+          <section class="output-panel">
+            <div class="output-header"><div><p class="eyebrow">Approved assets</p><h2>Saved Marketing Content</h2></div><span id="libraryBadge" class="badge">Ready</span></div>
+            <div id="libraryList" class="library-list"></div>
+          </section>
+        </section>
+
+        <section id="settings" class="tab-panel" aria-label="Settings">
+          <section class="card settings-card">
+            <p class="eyebrow">Settings</p>
+            <h2>Workspace Settings</h2>
+            <p class="section-copy">Supabase authentication, row-level security, and company ownership control which companies and saved outputs each user can see.</p>
+            <div class="settings-grid">
+              <div><strong>Storage</strong><p>Companies and saved outputs are stored in Supabase when the schema is installed.</p></div>
+              <div><strong>Privacy</strong><p>Users only see records tied to their Supabase user and selected company.</p></div>
+            </div>
+          </section>
+        </section>
+      </div>
     </main>
+    <div id="companyUrlChoiceModal" class="choice-modal" hidden>
+      <div class="choice-modal-card" role="dialog" aria-modal="true" aria-labelledby="companyUrlChoiceTitle">
+        <p class="eyebrow">Confirm company context</p>
+        <h2 id="companyUrlChoiceTitle">Website URL looks different</h2>
+        <p>This website URL looks different from the selected company profile. Do you want to update this selected company with the new URL, or create a new company?</p>
+        <div class="choice-actions">
+          <button id="updateSelectedCompanyChoice" class="primary-button" type="button">Update Selected Company</button>
+          <button id="createNewCompanyChoice" class="secondary-button" type="button">Create New Company</button>
+          <button id="cancelCompanyChoice" class="secondary-button" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
+    <div id="linkedInPostModal" class="choice-modal" hidden>
+      <div class="choice-modal-card linkedin-post-card" role="dialog" aria-modal="true" aria-labelledby="linkedInPostTitle">
+        <p class="eyebrow">LinkedIn publishing</p>
+        <h2 id="linkedInPostTitle">Post to LinkedIn?</h2>
+        <p id="linkedInPostAccount">Connected LinkedIn account</p>
+        <textarea id="linkedInPostPreview" rows="10" readonly></textarea>
+        <div class="choice-actions">
+          <button id="confirmLinkedInPostButton" class="primary-button" type="button">
+            <span class="spinner" hidden></span>
+            <span class="button-text">Post Now</span>
+          </button>
+          <button id="cancelLinkedInPostButton" class="secondary-button" type="button">Cancel</button>
+        </div>
+      </div>
+    </div>
   </body>
 </html>

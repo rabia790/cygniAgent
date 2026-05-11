@@ -57,7 +57,8 @@ create table if not exists saved_marketing_content (
   campaign_goal text,
   tone text,
   recommendation jsonb,
-  quality_score jsonb,
+  quality_score integer,
+  quality_metrics jsonb,
   selected_company_profile jsonb,
   user_request text,
   generated_output text,
@@ -143,6 +144,42 @@ create table if not exists website_scorecards (
   created_at timestamp with time zone default now()
 );
 
+create table if not exists linkedin_connections (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade not null,
+  linkedin_member_id text not null,
+  linkedin_name text,
+  linkedin_email text,
+  linkedin_picture_url text,
+  access_token_encrypted text not null,
+  token_expires_at timestamp with time zone,
+  scope text,
+  status text default 'connected' check (status in ('connected', 'expired', 'revoked', 'disconnected')),
+  created_at timestamp with time zone default now(),
+  updated_at timestamp with time zone default now(),
+  unique (user_id)
+);
+
+create table if not exists linkedin_oauth_states (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade not null,
+  state text not null unique,
+  created_at timestamp with time zone default now(),
+  expires_at timestamp with time zone not null
+);
+
+create table if not exists linkedin_published_posts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade not null,
+  company_id uuid references companies(id) on delete set null,
+  saved_content_id uuid references saved_marketing_content(id) on delete set null,
+  linkedin_post_urn text,
+  post_text text not null,
+  status text default 'published' check (status in ('published', 'failed')),
+  error_message text,
+  created_at timestamp with time zone default now()
+);
+
 alter table company_knowledge add column if not exists company_id uuid references companies(id) on delete cascade;
 alter table companies add column if not exists owner_id uuid references auth.users(id) on delete cascade;
 alter table companies add column if not exists visibility text default 'private' check (visibility in ('private', 'shared', 'public_demo'));
@@ -154,7 +191,7 @@ alter table saved_marketing_content add column if not exists region text;
 alter table saved_marketing_content add column if not exists campaign_goal text;
 alter table saved_marketing_content add column if not exists tone text;
 alter table saved_marketing_content add column if not exists recommendation jsonb;
-alter table saved_marketing_content add column if not exists quality_score jsonb;
+alter table saved_marketing_content add column if not exists quality_metrics jsonb;
 alter table saved_marketing_content add column if not exists selected_company_profile jsonb;
 alter table website_reviews add column if not exists company_id uuid references companies(id) on delete cascade;
 alter table website_reviews add column if not exists created_by uuid references auth.users(id) on delete set null;
@@ -170,6 +207,26 @@ alter table lead_magnets add column if not exists company_id uuid references com
 alter table lead_magnets add column if not exists created_by uuid references auth.users(id) on delete set null;
 alter table website_scorecards add column if not exists company_id uuid references companies(id) on delete cascade;
 alter table website_scorecards add column if not exists created_by uuid references auth.users(id) on delete set null;
+alter table linkedin_connections add column if not exists user_id uuid references auth.users(id) on delete cascade;
+alter table linkedin_connections add column if not exists linkedin_member_id text;
+alter table linkedin_connections add column if not exists linkedin_name text;
+alter table linkedin_connections add column if not exists linkedin_email text;
+alter table linkedin_connections add column if not exists linkedin_picture_url text;
+alter table linkedin_connections add column if not exists access_token_encrypted text;
+alter table linkedin_connections add column if not exists token_expires_at timestamp with time zone;
+alter table linkedin_connections add column if not exists scope text;
+alter table linkedin_connections add column if not exists status text default 'connected';
+alter table linkedin_connections add column if not exists updated_at timestamp with time zone default now();
+alter table linkedin_oauth_states add column if not exists user_id uuid references auth.users(id) on delete cascade;
+alter table linkedin_oauth_states add column if not exists state text;
+alter table linkedin_oauth_states add column if not exists expires_at timestamp with time zone;
+alter table linkedin_published_posts add column if not exists user_id uuid references auth.users(id) on delete cascade;
+alter table linkedin_published_posts add column if not exists company_id uuid references companies(id) on delete set null;
+alter table linkedin_published_posts add column if not exists saved_content_id uuid references saved_marketing_content(id) on delete set null;
+alter table linkedin_published_posts add column if not exists linkedin_post_urn text;
+alter table linkedin_published_posts add column if not exists post_text text;
+alter table linkedin_published_posts add column if not exists status text default 'published';
+alter table linkedin_published_posts add column if not exists error_message text;
 
 -- Backfill ownership for rows saved before per-user ownership was added.
 -- Rows without a company_id cannot be safely assigned to a user and will be hidden by RLS.
@@ -231,6 +288,9 @@ alter table campaign_plans enable row level security;
 alter table seo_page_plans enable row level security;
 alter table lead_magnets enable row level security;
 alter table website_scorecards enable row level security;
+alter table linkedin_connections enable row level security;
+alter table linkedin_oauth_states enable row level security;
+alter table linkedin_published_posts enable row level security;
 
 create or replace function public.is_admin()
 returns boolean
@@ -376,3 +436,18 @@ drop policy if exists "website_scorecards_access" on website_scorecards;
 create policy "website_scorecards_access" on website_scorecards for all
 using (public.can_access_company(company_id) and (created_by = auth.uid() or public.is_admin()))
 with check (public.can_access_company(company_id) and (created_by = auth.uid() or public.is_admin()));
+
+drop policy if exists "linkedin_connections_own_access" on linkedin_connections;
+create policy "linkedin_connections_own_access" on linkedin_connections for all
+using (user_id = auth.uid() or public.is_admin())
+with check (user_id = auth.uid() or public.is_admin());
+
+drop policy if exists "linkedin_oauth_states_own_access" on linkedin_oauth_states;
+create policy "linkedin_oauth_states_own_access" on linkedin_oauth_states for all
+using (user_id = auth.uid() or public.is_admin())
+with check (user_id = auth.uid() or public.is_admin());
+
+drop policy if exists "linkedin_published_posts_own_access" on linkedin_published_posts;
+create policy "linkedin_published_posts_own_access" on linkedin_published_posts for all
+using (user_id = auth.uid() or public.is_admin())
+with check (user_id = auth.uid() or public.is_admin());
