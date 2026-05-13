@@ -1119,7 +1119,8 @@ function updateLinkedInButtons() {
     connectLinkedInButton.hidden = false;
     connectLinkedInButton.disabled = true;
     postLinkedInButton.hidden = true;
-    setStatus(linkedinStatus, "LinkedIn posting is not configured yet.", "neutral");
+    const missing = linkedInConnection.missingConfig?.length ? ` Missing: ${linkedInConnection.missingConfig.join(", ")}.` : "";
+    setStatus(linkedinStatus, `LinkedIn posting is not configured yet.${missing}`, "neutral");
     return;
   }
 
@@ -1149,9 +1150,10 @@ async function checkLinkedInStatus() {
       configured: Boolean(data.configured),
       connected: Boolean(data.connected),
       account: data.account || null,
+      missingConfig: data.missingConfig || [],
     };
   } catch {
-    linkedInConnection = { configured: false, connected: false, account: null };
+    linkedInConnection = { configured: false, connected: false, account: null, missingConfig: [] };
   }
   updateLinkedInButtons();
   updateDashboardWorkspace();

@@ -12,9 +12,9 @@ const requestStore = new AsyncLocalStorage();
 const PORT = Number(process.env.PORT || 3000);
 
 loadEnvFile(".env");
-loadEnvFile(".env.local");
+loadEnvFile(".env.local", { override: true });
 
-function loadEnvFile(fileName) {
+function loadEnvFile(fileName, { override = false } = {}) {
   const filePath = path.join(__dirname, fileName);
   if (!fs.existsSync(filePath)) return;
   const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/);
@@ -24,7 +24,7 @@ function loadEnvFile(fileName) {
     const index = trimmed.indexOf("=");
     const key = trimmed.slice(0, index).trim();
     const value = trimmed.slice(index + 1).trim().replace(/^["']|["']$/g, "");
-    if (key && process.env[key] === undefined) process.env[key] = value;
+    if (key && (override || process.env[key] === undefined)) process.env[key] = value;
   });
 }
 
@@ -61,8 +61,18 @@ function getLinkedInConfig() {
 }
 
 function isLinkedInConfigured() {
+  return getMissingLinkedInConfigKeys().length === 0;
+}
+
+function getMissingLinkedInConfigKeys() {
   const config = getLinkedInConfig();
-  return Boolean(config.clientId && config.clientSecret && config.redirectUri && config.tokenEncryptionKey);
+  const required = [
+    ["LINKEDIN_CLIENT_ID", config.clientId],
+    ["LINKEDIN_CLIENT_SECRET", config.clientSecret],
+    ["LINKEDIN_REDIRECT_URI", config.redirectUri],
+    ["LINKEDIN_TOKEN_ENCRYPTION_KEY", config.tokenEncryptionKey],
+  ];
+  return required.filter(([, value]) => !String(value || "").trim()).map(([key]) => key);
 }
 
 function getCurrentUser() {
@@ -1659,8 +1669,10 @@ async function handleLinkedInStatus(_req, res) {
   try {
     const connection = await getLinkedInConnection();
     const connected = Boolean(connection.data && connection.data.status === "connected");
+    const missingConfig = getMissingLinkedInConfigKeys();
     sendJson(res, 200, {
-      configured: isLinkedInConfigured(),
+      configured: missingConfig.length === 0,
+      missingConfig,
       connected,
       account: connected
         ? {
@@ -1672,7 +1684,8 @@ async function handleLinkedInStatus(_req, res) {
     });
   } catch (error) {
     console.error("[linkedin] status error:", error);
-    sendJson(res, 200, { configured: isLinkedInConfigured(), connected: false, account: null });
+    const missingConfig = getMissingLinkedInConfigKeys();
+    sendJson(res, 200, { configured: missingConfig.length === 0, missingConfig, connected: false, account: null });
   }
 }
 
@@ -1683,11 +1696,24 @@ async function handleLinkedInConnectUrl(_req, res) {
       return;
     }
 
-    await cleanExpiredLinkedInOAuthStates();
+    const cleanResult = await cleanExpiredLinkedInOAuthStates();
+    if (cleanResult.error) {
+      console.error("[linkedin] oauth state cleanup error:", cleanResult.error);
+      sendJson(res, 500, {
+        error: "LinkedIn connection could not be started because OAuth state storage is not ready.",
+        detail: cleanResult.error,
+      });
+      return;
+    }
+
     const state = randomBytes(32).toString("base64url");
     const result = await saveLinkedInOAuthState(state);
     if (result.error) {
-      sendJson(res, 500, { error: "LinkedIn connection could not be started. Please try again." });
+      console.error("[linkedin] oauth state save error:", result.error);
+      sendJson(res, 500, {
+        error: "LinkedIn connection could not be started because OAuth state could not be saved.",
+        detail: result.error,
+      });
       return;
     }
 
