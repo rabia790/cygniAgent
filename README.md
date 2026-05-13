@@ -332,8 +332,8 @@ Add redirect URLs:
 ```text
 http://localhost:3000
 http://localhost:3000/**
-https://YOUR-VERCEL-DOMAIN.vercel.app
-https://YOUR-VERCEL-DOMAIN.vercel.app/**
+https://cygni-agent.vercel.app
+https://cygni-agent.vercel.app/**
 https://YOUR-CUSTOM-DOMAIN.com
 https://YOUR-CUSTOM-DOMAIN.com/**
 ```
@@ -341,12 +341,19 @@ https://YOUR-CUSTOM-DOMAIN.com/**
 Email confirmation redirects to:
 
 ```text
-http://localhost:3000/auth/callback
+https://cygni-agent.vercel.app/auth/callback
 ```
 
 Password reset redirects to:
 
 ```text
+https://cygni-agent.vercel.app/reset-password
+```
+
+Local development still uses the current browser origin, for example:
+
+```text
+http://localhost:3000/auth/callback
 http://localhost:3000/reset-password
 ```
 

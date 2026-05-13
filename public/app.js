@@ -308,6 +308,12 @@ function authHeaders(extra = {}) {
   };
 }
 
+function getAuthRedirectUrl(pathname) {
+  const redirectUrl = `${window.location.origin}${pathname}`;
+  console.info(`[auth] Using redirect URL: ${redirectUrl}`);
+  return redirectUrl;
+}
+
 async function initializeAuth() {
   try {
     const response = await fetch("/api/auth/config");
@@ -498,7 +504,7 @@ async function signUpWithPassword() {
     email,
     password: authPassword.value,
     options: {
-      emailRedirectTo: `${window.location.origin}/auth/callback`,
+      emailRedirectTo: getAuthRedirectUrl("/auth/callback"),
     },
   });
   setLoading(authSubmitButton, false, "Creating account...", "Sign Up");
@@ -529,7 +535,7 @@ async function sendPasswordReset() {
   let error = null;
   try {
     ({ error } = await supabaseAuth.auth.resetPasswordForEmail(authEmail.value.trim(), {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo: getAuthRedirectUrl("/reset-password"),
     }));
   } catch (requestError) {
     error = requestError;
@@ -565,7 +571,13 @@ async function resendConfirmationEmail() {
   setResendConfirmationButtonLoading(true);
   let error = null;
   try {
-    ({ error } = await supabaseAuth.auth.resend({ type: "signup", email }));
+    ({ error } = await supabaseAuth.auth.resend({
+      type: "signup",
+      email,
+      options: {
+        emailRedirectTo: getAuthRedirectUrl("/auth/callback"),
+      },
+    }));
   } catch (requestError) {
     error = requestError;
   } finally {

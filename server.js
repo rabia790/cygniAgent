@@ -75,6 +75,21 @@ function getMissingLinkedInConfigKeys() {
   return required.filter(([, value]) => !String(value || "").trim()).map(([key]) => key);
 }
 
+function getLinkedInDebugConfig() {
+  const config = getLinkedInConfig();
+  const missingConfig = getMissingLinkedInConfigKeys();
+  return {
+    configured: missingConfig.length === 0,
+    missingConfig,
+    clientIdLast4: config.clientId ? config.clientId.slice(-4) : "",
+    redirectUri: config.redirectUri,
+    redirectUriLength: config.redirectUri.length,
+    hasTrailingSlash: config.redirectUri.endsWith("/"),
+    nodeEnv: process.env.NODE_ENV || "",
+    vercelUrl: process.env.VERCEL_URL || "",
+  };
+}
+
 function getCurrentUser() {
   return requestStore.getStore()?.user || null;
 }
@@ -1724,6 +1739,11 @@ async function handleLinkedInConnectUrl(_req, res) {
     authUrl.searchParams.set("redirect_uri", config.redirectUri);
     authUrl.searchParams.set("state", state);
     authUrl.searchParams.set("scope", config.scopes);
+    console.info("[linkedin] connect-url config:", {
+      clientIdLast4: config.clientId ? config.clientId.slice(-4) : "",
+      redirectUri: JSON.stringify(config.redirectUri),
+    });
+    console.info("[linkedin] generated authorization URL:", authUrl.toString());
 
     sendJson(res, 200, { authorizationUrl: authUrl.toString() });
   } catch (error) {
@@ -3567,6 +3587,11 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/api/auth/config") {
     handleAuthConfig(req, res);
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/linkedin/debug-config") {
+    sendJson(res, 200, getLinkedInDebugConfig());
     return;
   }
 
